@@ -1,0 +1,6 @@
+/target
+
+# Generated bindings
+jellyfin/*
+!jellyfin/fix.patch
+!jellyfin/generate_jellyfin_api.bash

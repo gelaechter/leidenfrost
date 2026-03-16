@@ -1,0 +1,117 @@
+use iced::{
+    Element,
+    Length::Fill,
+    widget::{
+        column, container,
+        pane_grid::{Axis, Configuration, ResizeEvent},
+    },
+};
+
+use iced::widget::pane_grid;
+
+use crate::ui::{
+    player::{Player, PlayerMessage},
+    queue::{Queue, QueueMessage},
+    router::{Router, RouterMessage},
+    sidebar::{SidebarMessage, Sidebar},
+};
+
+pub struct App {
+    panes: pane_grid::State<Pane>,
+    sidebar: Sidebar,
+    router: Router,
+    queue: Queue,
+    player_bar: Player,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        let sidebar = Sidebar::default();
+        let router = Router::default();
+        let queue = Queue::default();
+        let player_bar = Player::default();
+
+        // Creates a new pane state and immediately splits it
+        let panes = pane_grid::State::<Pane>::with_configuration(Configuration::Split {
+            axis: Axis::Vertical,
+            ratio: 0.8,
+            a: Box::new(Configuration::Split {
+                axis: Axis::Vertical,
+                ratio: 0.2,
+                a: Box::new(Configuration::Pane(Pane::Sidebar)),
+                b: Box::new(Configuration::Pane(Pane::Router)),
+            }),
+            b: Box::new(Configuration::Pane(Pane::Queue)),
+        });
+
+        Self {
+            panes,
+            sidebar,
+            router,
+            queue,
+            player_bar,
+        }
+    }
+}
+
+pub enum Pane {
+    /// The sidebar pane on the left
+    Sidebar,
+    /// The queue on the right
+    Queue,
+    /// The main window in the middle
+    Router,
+}
+
+pub enum Message {
+    PaneDragged(pane_grid::DragEvent),
+    PaneResized(pane_grid::ResizeEvent),
+    Sidebar(SidebarMessage),
+    Queue(QueueMessage),
+    Router(RouterMessage),
+    PlayerBar(PlayerMessage),
+}
+
+/// The main layout of the application
+impl App {
+    pub fn view(&self) -> Element<'_, Message> {
+        // Enclosing container
+        container(column![
+            // Pane grid consisting of sidebar, main window (router) and queue
+            pane_grid(&self.panes, |pane, state, is_maximized| {
+                pane_grid::Content::new(match state {
+                    Pane::Sidebar => self.sidebar.view().map(Message::Sidebar),
+                    Pane::Queue => self.queue.view().map(Message::Queue),
+                    Pane::Router => self.router.view().map(Message::Router),
+                })
+            })
+            .on_drag(Message::PaneDragged)
+            .on_resize(10, Message::PaneResized),
+            // the player bar
+            self.player_bar.view().map(Message::PlayerBar)
+        ])
+        .height(Fill)
+        .width(Fill)
+        .into()
+    }
+
+    pub fn update(&mut self, message: Message) {
+        match message {
+            Message::PaneDragged(drag_event) => todo!(),
+            Message::PaneResized(ResizeEvent { split, ratio }) => {
+                self.panes.resize(split, ratio);
+            }
+            Message::Sidebar(sidebar_message) => {
+                // Currently irrefutable
+                if let SidebarMessage::UpdateRoute(route) = sidebar_message {
+                    self.router.update(RouterMessage::ChangeRoute(route));
+                }
+                self.sidebar.update(sidebar_message)
+
+            },
+            Message::Queue(queue_message) => self.queue.update(queue_message),
+            Message::Router(router_message) => self.router.update(router_message),
+            Message::PlayerBar(player_message) => self.player_bar.update(player_message),
+        }
+    }
+}

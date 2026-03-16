@@ -1,0 +1,319 @@
+diff '--color=auto' -ruN jellyfin_clean/.openapi-generator/FILES jellyfin/.openapi-generator/FILES
+--- jellyfin_clean/.openapi-generator/FILES	2026-03-16 15:59:26.084492612 +0100
++++ jellyfin/.openapi-generator/FILES	2026-03-16 00:16:49.279489182 +0100
+@@ -1,5 +1,4 @@
+ .gitignore
+-.openapi-generator-ignore
+ .travis.yml
+ Cargo.toml
+ README.md
+diff '--color=auto' -ruN jellyfin_clean/src/apis/audio_api.rs jellyfin/src/apis/audio_api.rs
+--- jellyfin_clean/src/apis/audio_api.rs	2026-03-16 15:59:25.953761754 +0100
++++ jellyfin/src/apis/audio_api.rs	2026-03-16 15:37:40.622257186 +0100
+@@ -246,7 +246,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+@@ -464,7 +464,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+@@ -685,7 +685,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+@@ -903,7 +903,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+diff '--color=auto' -ruN jellyfin_clean/src/apis/client_log_api.rs jellyfin/src/apis/client_log_api.rs
+--- jellyfin_clean/src/apis/client_log_api.rs	2026-03-16 15:59:25.961761948 +0100
++++ jellyfin/src/apis/client_log_api.rs	2026-03-16 15:48:33.601989056 +0100
+@@ -9,6 +9,8 @@
+  */
+ 
+ 
++use std::fs;
++
+ use reqwest;
+ use serde::{Deserialize, Serialize, de::Error as _};
+ use crate::{apis::ResponseContent, models};
+@@ -45,7 +47,9 @@
+         };
+         req_builder = req_builder.header("Authorization", value);
+     };
+-    req_builder = req_builder.body(p_body);
++    if let Some(p_body) = p_body {
++        req_builder = req_builder.body(fs::read_to_string(p_body).unwrap());
++    }
+ 
+     let req = req_builder.build()?;
+     let resp = configuration.client.execute(req).await?;
+diff '--color=auto' -ruN jellyfin_clean/src/apis/dynamic_hls_api.rs jellyfin/src/apis/dynamic_hls_api.rs
+--- jellyfin_clean/src/apis/dynamic_hls_api.rs	2026-03-16 15:59:25.972762215 +0100
++++ jellyfin/src/apis/dynamic_hls_api.rs	2026-03-16 15:56:45.915187931 +0100
+@@ -311,7 +311,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+@@ -552,7 +552,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+@@ -788,7 +788,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_max_width {
+         req_builder = req_builder.query(&[("maxWidth", &param_value.to_string())]);
+@@ -1028,7 +1028,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_adaptive_bitrate_streaming {
+         req_builder = req_builder.query(&[("enableAdaptiveBitrateStreaming", &param_value.to_string())]);
+@@ -1265,7 +1265,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_adaptive_bitrate_streaming {
+         req_builder = req_builder.query(&[("enableAdaptiveBitrateStreaming", &param_value.to_string())]);
+@@ -1503,7 +1503,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+@@ -1737,7 +1737,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+@@ -1968,7 +1968,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_adaptive_bitrate_streaming {
+         req_builder = req_builder.query(&[("enableAdaptiveBitrateStreaming", &param_value.to_string())]);
+@@ -2205,7 +2205,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_adaptive_bitrate_streaming {
+         req_builder = req_builder.query(&[("enableAdaptiveBitrateStreaming", &param_value.to_string())]);
+diff '--color=auto' -ruN jellyfin_clean/src/apis/image_api.rs jellyfin/src/apis/image_api.rs
+--- jellyfin_clean/src/apis/image_api.rs	2026-03-16 15:59:25.982762458 +0100
++++ jellyfin/src/apis/image_api.rs	2026-03-16 15:57:32.993537143 +0100
+@@ -9,6 +9,8 @@
+  */
+ 
+ 
++use std::fs;
++
+ use reqwest;
+ use serde::{Deserialize, Serialize, de::Error as _};
+ use crate::{apis::ResponseContent, models};
+@@ -2667,7 +2669,9 @@
+         };
+         req_builder = req_builder.header("Authorization", value);
+     };
+-    req_builder = req_builder.body(p_body);
++    if let Some(p_body) = p_body {
++        req_builder = req_builder.body(fs::read_to_string(p_body).unwrap());
++    }
+ 
+     let req = req_builder.build()?;
+     let resp = configuration.client.execute(req).await?;
+@@ -2703,7 +2707,9 @@
+         };
+         req_builder = req_builder.header("Authorization", value);
+     };
+-    req_builder = req_builder.body(p_body);
++    if let Some(p_body) = p_body {
++        req_builder = req_builder.body(fs::read_to_string(p_body).unwrap());
++    }
+ 
+     let req = req_builder.build()?;
+     let resp = configuration.client.execute(req).await?;
+@@ -2740,7 +2746,9 @@
+         };
+         req_builder = req_builder.header("Authorization", value);
+     };
+-    req_builder = req_builder.body(p_body);
++    if let Some(p_body) = p_body {
++        req_builder = req_builder.body(fs::read_to_string(p_body).unwrap());
++    }
+ 
+     let req = req_builder.build()?;
+     let resp = configuration.client.execute(req).await?;
+@@ -2811,7 +2819,9 @@
+         };
+         req_builder = req_builder.header("Authorization", value);
+     };
+-    req_builder = req_builder.body(p_body);
++    if let Some(p_body) = p_body {
++        req_builder = req_builder.body(fs::read_to_string(p_body).unwrap());
++    }
+ 
+     let req = req_builder.build()?;
+     let resp = configuration.client.execute(req).await?;
+diff '--color=auto' -ruN jellyfin_clean/src/apis/lyrics_api.rs jellyfin/src/apis/lyrics_api.rs
+--- jellyfin_clean/src/apis/lyrics_api.rs	2026-03-16 15:59:26.002762943 +0100
++++ jellyfin/src/apis/lyrics_api.rs	2026-03-16 15:54:01.639795897 +0100
+@@ -9,6 +9,8 @@
+  */
+ 
+ 
++use std::fs;
++
+ use reqwest;
+ use serde::{Deserialize, Serialize, de::Error as _};
+ use crate::{apis::ResponseContent, models};
+@@ -314,7 +316,9 @@
+         };
+         req_builder = req_builder.header("Authorization", value);
+     };
+-    req_builder = req_builder.body(p_body);
++    if let Some(p_body) = p_body {
++        req_builder = req_builder.body(fs::read_to_string(p_body).unwrap());
++    }
+ 
+     let req = req_builder.build()?;
+     let resp = configuration.client.execute(req).await?;
+diff '--color=auto' -ruN jellyfin_clean/src/apis/videos_api.rs jellyfin/src/apis/videos_api.rs
+--- jellyfin_clean/src/apis/videos_api.rs	2026-03-16 15:59:26.058764303 +0100
++++ jellyfin/src/apis/videos_api.rs	2026-03-16 15:50:02.874593652 +0100
+@@ -367,7 +367,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+@@ -593,7 +593,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+@@ -822,7 +822,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+@@ -1048,7 +1048,7 @@
+         req_builder = req_builder.query(&[("context", &param_value.to_string())]);
+     }
+     if let Some(ref param_value) = p_stream_options {
+-        req_builder = req_builder.query(&[("streamOptions", &param_value.to_string())]);
++        req_builder = req_builder.query(&[("streamOptions", &param_value)]);
+     }
+     if let Some(ref param_value) = p_enable_audio_vbr_encoding {
+         req_builder = req_builder.query(&[("enableAudioVbrEncoding", &param_value.to_string())]);
+diff '--color=auto' -ruN jellyfin_clean/src/models/transcoding_info.rs jellyfin/src/models/transcoding_info.rs
+--- jellyfin_clean/src/models/transcoding_info.rs	2026-03-16 15:59:24.846734893 +0100
++++ jellyfin/src/models/transcoding_info.rs	2026-03-16 15:53:01.658029429 +0100
+@@ -76,13 +76,34 @@
+     }
+ }
+ /// Gets or sets the transcode reasons.
+-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
++#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Default)]
+ pub enum TranscodeReasons {
++    #[default]
++    ContainerNotSupported,
++    VideoCodecNotSupported,
++    AudioCodecNotSupported,
++    SubtitleCodecNotSupported,
++    AudioIsExternal,
++    SecondaryAudioNotSupported,
++    VideoProfileNotSupported,
++    VideoLevelNotSupported,
++    VideoResolutionNotSupported,
++    VideoBitDepthNotSupported,
++    VideoFramerateNotSupported,
++    RefFramesNotSupported,
++    AnamorphicVideoNotSupported,
++    InterlacedVideoNotSupported,
++    AudioChannelsNotSupported,
++    AudioProfileNotSupported,
++    AudioSampleRateNotSupported,
++    AudioBitDepthNotSupported,
++    ContainerBitrateExceedsLimit,
++    VideoBitrateNotSupported,
++    AudioBitrateNotSupported,
++    UnknownVideoStreamInfo,
++    UnknownAudioStreamInfo,
++    DirectPlayError,
++    VideoRangeTypeNotSupported,
++    VideoCodecTagNotSupported,
++    StreamCountExceedsLimit,
+ }
+-
+-impl Default for TranscodeReasons {
+-    fn default() -> TranscodeReasons {
+-        Self::
+-    }
+-}
+-
