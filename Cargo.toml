@@ -9,6 +9,11 @@ iced = { version = "0.14.0", features = ["image"] }
 iced_fonts = { version = "0.3.0", features = ["lucide"] }
 libmpv2 = "5.0.3"
 tokio = { version = "1.50.0", features = ["macros", "test-util"] }
-# jellyfin API
-jellyfin = { path = "./jellyfin" }
 serde = { version = "1.0.228", features = ["derive"] }
+chrono = { version = "0.4.44", features = ["serde"] }
+url = { version = "2.5.8", features = ["serde"] }
+thiserror = "2.0.18"
+color-eyre = "0.6.5"
+reqwest = "0.13.2"
+serde_json = "1.0.149"
+http-serde = "2.1.1"

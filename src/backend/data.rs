@@ -1,16 +1,19 @@
+use std::{collections::BTreeMap, time::Duration};
+
+use chrono::{NaiveDate, NaiveDateTime};
 use serde::Deserialize;
 use serde::Serialize;
+use url::Url;
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
-pub struct Settings {
-    pub endpoint: Endpoint,
+pub struct Disc {
+    number: i64,
+    tracks: Vec<Track>,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, Copy)]
-pub enum RepeatMode {
-    None,
-    RepeatSong,
-    RepeatQueue,
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Debug)]
+pub enum Lyrics {
+    Plain(Vec<String>),
+    Synchronized(BTreeMap<Duration, String>),
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -27,40 +30,49 @@ pub struct Track {
     /// The artists who made this song
     pub artists: Vec<RelatedArtist>,
     /// The bitrate of this songs audio file
-    pub bit_rate: i32,
+    pub bit_rate: i64,
     /// The bpm of this song
-    pub bpm: Option<i32>,
+    pub bpm: Option<i64>,
     /// The number of audio channles in this audio file
-    pub channels: Option<i32>,
+    pub channels: Option<i64>,
     /// A comment for this song
     pub comment: Option<String>,
     /// Is this song a compilation?
     pub compilation: Option<bool>,
     /// The container format of this songs audio file
     pub container: Option<String>,
-    pub created_at: String,
-    pub disc_number: i32,
+    pub disc_number: Option<i64>,
     /// The duration of the song in seconds
-    pub duration: i32,
+    pub duration: Option<i64>,
+    /// The genres this track belongs to
     pub genres: Vec<Genre>,
-    pub image_url: Option<String>,
+    /// The url of this tracks cover image
+    pub image_url: Option<Url>,
+    /// The blur hash of this tracks cover
+    /// See https://blurha.sh/ for more information
     pub image_blur_hash: Option<String>,
-    pub last_played_at: Option<String>,
-    pub lyrics: Option<String>,
+    /// When this track was last played
+    pub last_played_at: Option<NaiveDateTime>,
+    /// The lyrics of this track
+    pub lyrics: Option<Lyrics>,
+    /// The name of this track
     pub name: String,
-    pub path: Option<String>,
-    pub play_count: i32,
-    pub playlist_item_id: String,
-    pub release_date: Option<String>,
-    pub release_year: Option<String>,
-    pub server_id: String,
-    pub endpoint: Endpoint,
-    pub size: i32,
-    pub stream_url: String,
-    pub track_number: i32,
-    pub updated_at: String,
+    /// The file path of this track
+    pub file_path: Option<String>,
+    /// How often this track has been played
+    pub play_count: Option<i64>,
+    /// The id of the playlist if this track belongs to one
+    pub playlist_id: Option<String>,
+    /// When this track was realeased
+    pub release_date: Option<NaiveDate>,
+    /// The file size of this track in bytes
+    pub size: Option<i64>,
+    /// The url pointing to the audio stream of this track
+    pub stream_url: Url,
+    /// The number of this track
+    pub track_number: Option<i64>,
+    /// If this track was favorited by the user
     pub user_favorite: bool,
-    pub user_rating: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -86,23 +98,22 @@ pub struct Album {
     pub artists: Vec<RelatedArtist>,
     pub backdrop_image_url: Option<String>,
     pub created_at: String,
-    pub duration: Option<i32>,
+    pub duration: Option<i64>,
     pub genres: Vec<Genre>,
-    pub image_url: Option<String>,
+    pub image_url: Option<Url>,
     pub image_blur_hash: Option<String>,
     pub is_compilation: Option<bool>,
     pub last_palyet_at: Option<String>,
     pub name: String,
-    pub play_count: Option<i32>,
-    pub release_date: Option<String>,
-    pub release_year: Option<i32>,
+    pub play_count: Option<i64>,
+    pub release_date: Option<NaiveDate>,
     pub server_id: String,
-    pub size: Option<i32>,
-    pub song_count: Option<i32>,
+    pub size: Option<i64>,
+    pub song_count: Option<i64>,
     pub songs: Vec<Track>,
     pub updated_at: String,
     pub user_favorite: bool,
-    pub user_rating: Option<i32>,
+    pub user_rating: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -115,27 +126,27 @@ pub struct RelatedArtist {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct Artist {
     pub id: String,
-    pub album_count: Option<i32>,
+    pub album_count: Option<i64>,
     pub biography: Option<String>,
-    pub duration: Option<i32>,
+    pub duration: Option<i64>,
     pub genres: Vec<Genre>,
     pub image_url: Option<String>,
     pub image_blur_hash: Option<String>,
     pub background_image_url: Option<String>,
     pub last_played_at: Option<String>,
     pub name: String,
-    pub play_count: Option<i32>,
+    pub play_count: Option<i64>,
     pub server_id: String,
     pub similar_artists: Vec<RelatedArtist>,
-    pub song_count: Option<i32>,
+    pub song_count: Option<i64>,
     pub user_favorite: bool,
-    pub user_rating: Option<i32>,
+    pub user_rating: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct Playlist {
     pub id: String,
-    pub image_url: Option<String>,
+    pub image_url: Option<Url>,
     pub image_blur_hash: Option<String>,
     pub name: String,
 }
