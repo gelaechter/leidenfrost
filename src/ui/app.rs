@@ -1,6 +1,8 @@
 use iced::{
     Element,
     Length::Fill,
+    Task,
+    message::MaybeClone,
     widget::{
         column, container,
         pane_grid::{Axis, Configuration, ResizeEvent},
@@ -9,11 +11,14 @@ use iced::{
 
 use iced::widget::pane_grid;
 
-use crate::ui::{
-    player::{Player, PlayerMessage},
-    queue::{Queue, QueueMessage},
-    router::{Router, RouterMessage},
-    sidebar::{SidebarMessage, Sidebar},
+use crate::{
+    backend::api::endpoint_api::Endpoint,
+    ui::{
+        player::{Player, PlayerMessage},
+        queue::{Queue, QueueMessage},
+        router::{self, Router},
+        sidebar::{Sidebar, SidebarMessage},
+    },
 };
 
 pub struct App {
@@ -22,6 +27,10 @@ pub struct App {
     router: Router,
     queue: Queue,
     player_bar: Player,
+}
+
+pub struct Settings {
+    selected_apis: Vec<Endpoint>,
 }
 
 impl Default for App {
@@ -63,12 +72,13 @@ pub enum Pane {
     Router,
 }
 
+#[derive(Debug, Clone)]
 pub enum Message {
     PaneDragged(pane_grid::DragEvent),
     PaneResized(pane_grid::ResizeEvent),
     Sidebar(SidebarMessage),
     Queue(QueueMessage),
-    Router(RouterMessage),
+    Router(router::Message),
     PlayerBar(PlayerMessage),
 }
 
@@ -95,23 +105,33 @@ impl App {
         .into()
     }
 
-    pub fn update(&mut self, message: Message) {
+    pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::PaneDragged(drag_event) => todo!(),
             Message::PaneResized(ResizeEvent { split, ratio }) => {
                 self.panes.resize(split, ratio);
+                Task::none()
             }
             Message::Sidebar(sidebar_message) => {
                 // Currently irrefutable
+                self.sidebar.update(sidebar_message.clone());
                 if let SidebarMessage::UpdateRoute(route) = sidebar_message {
-                    self.router.update(RouterMessage::ChangeRoute(route));
+                    self.router.update(router::Message::ChangeRoute(route)).map(Message::Router)
+                } else {
+                    Task::none()
                 }
-                self.sidebar.update(sidebar_message)
-
-            },
-            Message::Queue(queue_message) => self.queue.update(queue_message),
-            Message::Router(router_message) => self.router.update(router_message),
-            Message::PlayerBar(player_message) => self.player_bar.update(player_message),
+            }
+            Message::Queue(queue_message) => {
+                self.queue.update(queue_message);
+                Task::none()
+            }
+            Message::Router(router_message) => {
+                self.router.update(router_message).map(Message::Router)
+            }
+            Message::PlayerBar(player_message) => {
+                self.player_bar.update(player_message);
+                Task::none()
+            }
         }
     }
 }

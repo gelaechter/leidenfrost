@@ -20,7 +20,7 @@ pub struct Sidebar {
     route: Route,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum SidebarMessage {
     UpdateRoute(Route),
 }

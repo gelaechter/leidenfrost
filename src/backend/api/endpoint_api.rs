@@ -1,23 +1,54 @@
-use serde::Deserialize;
-use serde::Serialize;
+use reqwest::RequestBuilder;
 use url::Url;
 
-use crate::backend::data::{Album, Artist, Disc, Genre, Playlist, Track, User};
+use crate::backend::db::models::{Album, Artist, Disc, Genre, Playlist, Track};
 
-pub trait SettingsContract {}
-
-#[derive(Serialize, Deserialize)]
-pub enum EndpointAuths {
-    JFUserPassword {
-        url: Url,
-        username: String,
-        password: String,
-    },
+/// The different Endpoints that are currently supported
+#[derive(Clone, Debug)]
+pub enum Endpoint {
+    Jellyfin,
+    // Navidrome,
+    // Spotify,
+    // File
+    // Subsonic
 }
 
-pub trait MultiUsers {
-    /// Fetches all available users
-    async fn get_users(url: Url) -> Vec<User>;
+/// An API that supports multiple users
+// pub trait MultiUsers {
+//     /// Fetches all available users
+//     fn get_users(&self, url: Url) -> impl std::future::Future<Output = Vec<User>> + Send;
+// }
+
+pub trait Pagination {
+    /// Limit the amounts of items retrieved by specifying:
+    ///   - `start`: the starting index of the fetch (i.e. skip the first n items)
+    ///   - `limit`: the amounts of items to fetch in this request
+    fn limit_request(request: RequestBuilder, start: i64, limit: i64) -> RequestBuilder;
+}
+
+pub trait UserPasswordAuth {
+    /// Authenticate a
+    async fn auth_user_password(url: Url, username: String, password: String) -> Self;
+}
+
+pub trait ImageSize {
+    /// Sets the resolution of an API image
+    /// This can for example be done through url parameters like
+    ///   - width
+    ///   - height
+    ///   - original
+    fn set_image_resolution(request: RequestBuilder, width: u32, height: u32) -> RequestBuilder;
+}
+
+pub enum SearchResult {
+    Track(Track),
+    Album(Album),
+    Playlist(Playlist),
+    Genre(Genre),
+    LyricMatch{
+        matched_lyric: String,
+        track: Track
+    }    
 }
 
 pub trait ApiContract {
@@ -25,7 +56,7 @@ pub trait ApiContract {
     async fn get_track(&self, song_id: String) -> Track;
 
     /// Fetches all tracks
-    async fn get_tracks(&self, start: i32, limit: i32) -> color_eyre::Result<Vec<Track>>;
+    async fn get_tracks(&self) -> color_eyre::Result<Vec<Track>>;
 
     /// Fetches all songs from an album
     async fn get_songs_from_album(&self, album_id: String) -> color_eyre::Result<Vec<Disc>>;
@@ -45,18 +76,12 @@ pub trait ApiContract {
     /// Fetches all artists
     async fn get_artists(&self) -> color_eyre::Result<Vec<Artist>>;
 
-    /// Fetches a list of genres
+    /// Fetches all genres
     async fn get_genres(&self) -> color_eyre::Result<Vec<Genre>>;
 
-    /// Fetches a list of genres
+    /// Fetches all playlists
     async fn get_playlists(&self) -> color_eyre::Result<Vec<Playlist>>;
 
     /// Fetches songs containing a search term
-    async fn search_songs(&self, search_term: String) -> color_eyre::Result<Vec<Track>>;
-
-    /// Fetches albums containing a search term
-    async fn search_albums(&self, search_term: String) -> color_eyre::Result<Vec<Album>>;
-
-    /// Fetches artists containing a search term
-    async fn search_artists(&self, search_term: String) -> color_eyre::Result<Vec<Artist>>;
+    async fn search(&self, search_term: String) -> color_eyre::Result<Vec<SearchResult>>;
 }

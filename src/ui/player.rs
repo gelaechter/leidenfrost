@@ -1,24 +1,25 @@
 use iced::{
-    Element, Length, Subscription,
+    Border, Element, Length, Subscription,
     alignment::{Horizontal, Vertical},
-    widget::{column, container, row},
+    border::Radius,
+    widget::{self, column, container, row},
 };
 use iced_fonts::lucide;
 use libmpv2::Mpv;
 
-use crate::{backend::data::Track, player_button, ui::util::format_duration};
+use crate::{backend::db::models::track, ui::util::format_duration};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum PlayerMessage {
     /// When the stop button has been pressed
     StopPlayer,
     /// Adds some songs to the queue
     AddToQueue {
-        songs: Vec<Track>,
+        songs: Vec<track::Model>,
     },
     /// Removes some songs from the queue
     RemoveFromQueue {
-        songs: Vec<Track>,
+        songs: Vec<track::Model>,
     },
     /// Changes the repeat mode of the player
     ChangeRepeatMode {
@@ -34,7 +35,7 @@ pub enum PlayerMessage {
     EventOccurred,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub enum RepeatMode {
     #[default]
     /// Do not repeat at all
@@ -54,13 +55,13 @@ pub enum PlayerState {
 }
 
 pub struct Player {
-    ///
+    /// the Mpv instance
     lib_mpv: Mpv,
     /// The queue in an unshuffled state
     /// This way the queue can be unshuffled again
-    unshuffled_queue: Vec<Track>,
+    unshuffled_queue: Vec<track::Model>,
     /// Current queue
-    queue: Vec<Track>,
+    queue: Vec<track::Model>,
     /// Current index in the queue
     current_track: usize,
     /// If the queue is shuffled or not
@@ -126,17 +127,29 @@ impl Player {
         let time_pos: f64 = self.lib_mpv.get_property("time-pos").unwrap_or_default();
         let duration: f64 = self.lib_mpv.get_property("duration").unwrap_or_default();
 
+        let player_button = |content| {
+            widget::button(content)
+                .padding(8)
+                .style(|_, _| widget::button::Style {
+                    border: Border {
+                        radius: Radius::new(2),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+        };
+
         container(column![
             // The player buttons
             container(row![
-                player_button!(lucide::square().size(BUTTON_SIZE))
+                player_button(lucide::square().size(BUTTON_SIZE))
                     .on_press(PlayerMessage::StopPlayer),
-                player_button!(lucide::shuffle().size(BUTTON_SIZE)),
-                player_button!(lucide::skip_back().size(BUTTON_SIZE)),
-                player_button!(lucide::play().size(BUTTON_SIZE)),
-                player_button!(lucide::skip_forward().size(BUTTON_SIZE)),
-                player_button!(lucide::repeat().size(BUTTON_SIZE)),
-                player_button!(lucide::dice_five().size(BUTTON_SIZE))
+                player_button(lucide::shuffle().size(BUTTON_SIZE)),
+                player_button(lucide::skip_back().size(BUTTON_SIZE)),
+                player_button(lucide::play().size(BUTTON_SIZE)),
+                player_button(lucide::skip_forward().size(BUTTON_SIZE)),
+                player_button(lucide::repeat().size(BUTTON_SIZE)),
+                player_button(lucide::dice_five().size(BUTTON_SIZE))
                     .on_press(PlayerMessage::PlayRandom)
             ])
             .width(Length::Fill)

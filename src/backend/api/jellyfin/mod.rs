@@ -1,3 +1,4 @@
-pub mod api;
 pub mod data;
-pub mod normalize;
+pub mod api;
+pub mod errors;
+mod normalize;

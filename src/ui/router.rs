@@ -1,10 +1,11 @@
 use iced::{
     Color, Element,
     Length::Fill,
-    widget::{container, container::Style},
+    Task,
+    widget::{self, container::Style},
 };
 
-use crate::ui::routes::tracks::{Tracks, TracksMessage};
+use crate::ui::routes::tracks::{self, Tracks};
 
 #[derive(Default)]
 pub struct Router {
@@ -24,22 +25,23 @@ pub enum Route {
     Genres,
 }
 
-pub enum RouterMessage {
+#[derive(Debug, Clone)]
+pub enum Message {
     ChangeRoute(Route),
-    TracksMessage(TracksMessage),
+    TracksMessage(tracks::Message),
 }
 
 impl Router {
-    pub fn view(&self) -> Element<'_, RouterMessage> {
-        container(match self.route {
-            Route::Home => container("text")
+    pub fn view(&self) -> Element<'_, Message> {
+        widget::container(match self.route {
+            Route::Home => widget::container("text")
                 .style(|_| Style::default().background(Color::from_rgb(0.9, 0.9, 0.9)))
                 .width(Fill)
                 .height(Fill)
                 .into(),
             Route::Favorites => todo!(),
             Route::Albums => todo!(),
-            Route::Tracks => self.tracks.view().map(RouterMessage::TracksMessage),
+            Route::Tracks => self.tracks.view().map(Message::TracksMessage),
             Route::AlbumArtists => todo!(),
             Route::Artists => todo!(),
             Route::Genres => todo!(),
@@ -48,10 +50,16 @@ impl Router {
         .into()
     }
 
-    pub fn update(&mut self, message: RouterMessage) {
+    pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            RouterMessage::ChangeRoute(route) => self.route = route,
-            RouterMessage::TracksMessage(tracks_message) => self.tracks.update(tracks_message),
+            Message::ChangeRoute(route) => {
+                self.route = route;
+                Task::none()
+            }
+            Message::TracksMessage(tracks_message) => self
+                .tracks
+                .update(tracks_message)
+                .map(Message::TracksMessage),
         }
     }
 }

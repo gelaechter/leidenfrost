@@ -4,6 +4,7 @@ use iced::widget::column;
 #[derive(Default)]
 pub struct Queue {}
 
+#[derive(Debug, Clone)]
 pub enum QueueMessage {}
 
 impl Queue {
