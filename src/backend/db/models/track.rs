@@ -21,9 +21,11 @@ pub struct Model {
     /// The recommended approach is using: endpoint identifier (e.g. URL) + endpoint local ID
     #[sea_orm(primary_key)]
     pub id: String,
-    /// The disc this track belongs to
+    /// The album this track belongs to
     pub album_id: String,
+    /// The disc this track belongs to
     pub disc_number: i64,
+    /// (album_id, disc_number) is the composite key for the discs
     #[sea_orm(
         belongs_to,
         from = "(album_id, disc_number)",

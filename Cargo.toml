@@ -5,10 +5,15 @@ edition = "2024"
 
 [dependencies]
 futures = "0.3.32"
-iced = { version = "0.14.0", features = ["image", "sipper", "time-travel", "tokio"] }
+iced = { version = "0.14.0", features = [
+    "image", 
+    "sipper", 
+    # "time-travel", 
+    "tokio", 
+    "advanced"] }
 iced_fonts = { version = "0.3.0", features = ["lucide"] }
 libmpv2 = "5.0.3"
-tokio = { version = "1.50.0", features = ["fs", "io-util", "macros", "test-util"] }
+tokio = { version = "1.50.0", features = ["full", "test-util", "tracing"] }
 serde = { version = "1.0.228", features = ["derive"] }
 chrono = { version = "0.4.44", features = ["serde"] }
 url = { version = "2.5.8", features = ["serde"] }
@@ -23,3 +28,4 @@ bytes = "1.11.1"
 sea-orm = { version = "2.0.0-rc.37", features = ["sqlx-sqlite", "runtime-tokio", "with-chrono", "schema-sync", "entity-registry"] }
 ordered-float = { version = "5.3.0", features = ["serde"] }
 uuid = { version = "1.23.0", features = ["v3", "v4"] }
+# console-subscriber = "0.5.0"

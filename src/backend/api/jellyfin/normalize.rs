@@ -8,9 +8,13 @@ use crate::backend::{
         endpoint_api::ApiContract,
         jellyfin::{
             api::JellyfinApi,
-            data::{BaseItemDto, BaseItemImageTags, BaseItemKind, ImageBlurHash, UserItemDataDto},
+            data::{
+                BaseItemDto, BaseItemImageTags, BaseItemKind, ImageBlurHash, NameGuidPair,
+                UserItemDataDto,
+            },
         },
     },
+    data_view::{RelatedArtist, RelatedGenre, TrackView},
     db::models::Track,
 };
 
@@ -45,11 +49,14 @@ impl<T> OrEmptySlice<T> for Option<&Vec<T>> {
     }
 }
 
-impl Normalize<BaseItemDto, Track> for JellyfinApi {
-    fn normalize(&self, value: BaseItemDto) -> Track {
+impl Normalize<BaseItemDto, TrackView> for JellyfinApi {
+    fn normalize(&self, value: BaseItemDto) -> TrackView {
         let BaseItemDto {
+            album,
             album_id,
             album_primary_image_tag,
+            artist_items,
+            genre_items,
             container,
             id,
             image_blur_hashes,
@@ -79,7 +86,7 @@ impl Normalize<BaseItemDto, Track> for JellyfinApi {
             "Tried to normalize a non BaseItemKind::Audio as a Track"
         );
 
-        Track {
+        let track = Track {
             // Id's are guaranteed
             album_id: album_id
                 .clone()
@@ -148,6 +155,21 @@ impl Normalize<BaseItemDto, Track> for JellyfinApi {
             id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
             track_number: index_number,
             user_favorite: is_favorite,
+        };
+
+        TrackView {
+            track,
+            artists: artist_items
+                .or_empty()
+                .into_iter()
+                .map(|NameGuidPair { id, name }| RelatedArtist { id, name })
+                .collect(),
+            album_name: album,
+            genres: genre_items
+                .or_empty()
+                .into_iter()
+                .map(|NameGuidPair { id, name }| RelatedGenre { id, name })
+                .collect(),
         }
     }
 }

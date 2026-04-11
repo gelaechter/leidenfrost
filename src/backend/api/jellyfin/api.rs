@@ -2,11 +2,10 @@ use crate::backend::{
     api::{
         endpoint_api::{ApiContract, SearchResult},
         jellyfin::{data::{BaseItemDtoQueryResult, BaseItemKind}, normalize::Normalize},
-    },
-    db::{
+    }, data_view::TrackView, db::{
         models::{Album, Artist, Disc, Genre, Playlist, Track},
         sqlite::DB,
-    },
+    }
 };
 use std::collections::HashSet;
 
@@ -238,18 +237,20 @@ impl JellyfinApi {
 }
 
 impl ApiContract for JellyfinApi {
-    async fn get_track(&self, song_id: String) -> Track {
+    async fn get_track(&self, song_id: String) -> TrackView {
         todo!()
     }
 
-    async fn get_tracks(&self) -> color_eyre::Result<Vec<Track>> {
+    /// TODO: currently doesn't fetch everything? 
+    /// or the order is just off
+    async fn get_tracks(&self) -> color_eyre::Result<Vec<TrackView>> {
         let query_result: BaseItemDtoQueryResult = serde_json::from_value(
             self.request(
                 "/Users/07bd2df2d1bf4b51b33082acf300aeba/Items".to_owned(),
                 &json!({
                     "Recursive": true,
                     "IncludeItemTypes": BaseItemKind::Audio,
-                    "Limit": 100
+                    "Limit": 1000
                 }),
             )
             .await

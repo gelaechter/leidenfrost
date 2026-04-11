@@ -2,7 +2,7 @@ use iced::{
     Border, Element, Length, Subscription,
     alignment::{Horizontal, Vertical},
     border::Radius,
-    widget::{self, column, container, row},
+    widget::{self, Text, column, container, row},
 };
 use iced_fonts::lucide;
 use libmpv2::Mpv;

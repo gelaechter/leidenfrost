@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use iced::{
     Alignment::Center,
     Element,
-    Length::Fill,
+    Length::{Fill, FillPortion},
     Task,
-    widget::{self, row, table, text},
+    widget::{self, column, rich_text, row, table},
 };
 use iced_fonts::lucide;
 use url::Url;
@@ -17,27 +17,32 @@ use crate::{
             endpoint_api::{ApiContract, UserPasswordAuth},
             jellyfin::api::JellyfinApi,
         },
+        data_view::{RelatedArtist, RelatedGenre, TrackView},
         db::models::Track,
     },
     ui::{
-        components::image::{self, Image},
+        components::{
+            image::{self, Image},
+            utils::IntoLinks,
+        },
+        router::Route,
         util::format_duration,
     },
 };
-use iced::widget::column;
 
 /// The tracks route
 #[derive(Default)]
 pub struct Tracks {
-    tracks: Vec<Track>,
+    tracks: Vec<TrackView>,
     images: HashMap<Uuid, Image>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     FetchTracks,
-    TracksFetched(Vec<Track>),
+    TracksFetched(Vec<TrackView>),
     ImageDriver(Uuid, image::Message),
+    ChangeRoute(Route),
 }
 
 impl Tracks {
@@ -51,24 +56,31 @@ impl Tracks {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::FetchTracks => Task::perform(
-                async {
-                    let jf = JellyfinApi::auth_user_password(
-                        Url::parse("http://***REMOVED***").unwrap(),
-                        "***REMOVED***".to_string(),
-                        "***REMOVED***".to_string(),
-                    )
-                    .await;
+            Message::FetchTracks => {
+                // Only fetch first time
+                if !self.tracks.is_empty() {
+                    return Task::none();
+                }
 
-                    jf.get_tracks().await.unwrap()
-                },
-                Message::TracksFetched,
-            ),
+                Task::perform(
+                    async {
+                        let jf = JellyfinApi::auth_user_password(
+                            Url::parse("http://***REMOVED***").unwrap(),
+                            "***REMOVED***".to_string(),
+                            "***REMOVED***".to_string(),
+                        )
+                        .await;
+
+                        jf.get_tracks().await.unwrap()
+                    },
+                    Message::TracksFetched,
+                )
+            }
             Message::TracksFetched(tracks) => {
                 // Create images from tracks
-                for track in tracks.iter().filter(|t| t.image_url.is_some()) {
-                    let url = track.image_url.clone().unwrap();
-                    let (id, image) = Image::new(url.into(), track.image_blur_hash.clone());
+                for v in tracks.iter().filter(|v| v.track.image_url.is_some()) {
+                    let url = v.track.image_url.clone().unwrap();
+                    let (id, image) = Image::new(url.into(), v.track.image_blur_hash.clone());
                     self.images.insert(id, image);
                 }
                 // Insert tracks
@@ -83,62 +95,87 @@ impl Tracks {
                     Task::none()
                 }
             }
+            // Only bubbles up
+            Message::ChangeRoute(_) => Task::none(),
         }
     }
 
-    pub fn combined_title(&self, track: &Track) -> Element<'_, Message> {
-        let image = if let Some(image_id) = track.image_url.as_ref().map(|u| Image::uuid(u))
+    pub fn combined_title(&self, v: &TrackView) -> Element<'_, Message> {
+        let TrackView {
+            track: Track {
+                image_url, title, ..
+            },
+            artists,
+            ..
+        } = v;
+
+        let image = if let Some(image_id) = image_url.as_ref().map(|u| Image::uuid(u))
             && let Some(image) = self.images.get(&image_id)
         {
             image.view().map(move |m| Message::ImageDriver(image_id, m))
         } else {
             // Or show a placeholder
-            widget::container(lucide::disc_album()).into()
+            lucide::disc_album().into()
         };
 
-        let title = text(track.title.clone().unwrap_or("-".to_owned()));
-        let artist = text("TODO:");
-        let container = widget::container(column![title, artist]).center_y(64);
-        row![image, container].into()
+        let title = widget::text(title.clone().unwrap_or("No title".to_owned()));
+
+        let artist_text = artists
+            .clone()
+            .into_links(
+                |RelatedArtist { id, name }| {
+                    (
+                        name.unwrap_or("Unknown artist".to_owned()),
+                        Route::Artist(id.to_string()),
+                    )
+                },
+                Message::ChangeRoute,
+            )
+            .size(12);
+
+        row![
+            widget::container(image).center(64),
+            widget::space().width(8),
+            widget::container(column![title, artist_text]).center_y(64)
+        ]
+        .into()
     }
 
     pub fn track_table(&self) -> Element<'_, Message> {
         let columns = [
             // Name column
-            table::column("Title", |track: &Track| {
+            table::column("Title", |v: &TrackView| {
                 // Get the image by id
-                self.combined_title(track)
+                self.combined_title(v)
             })
+            .width(FillPortion(6))
             .align_y(Center),
             // Duration column
-            table::column("Duration", |track: &Track| {
-                text(format_duration(track.duration.unwrap_or_default() as f64))
+            table::column("Duration", |v: &TrackView| {
+                widget::text(format_duration(v.track.duration.unwrap_or_default() as f64))
             })
+            .width(FillPortion(1))
             .align_x(Center)
             .align_y(Center),
             // Album column
-            table::column("Album", |track: &Track| {
-                text(
-                    // track.album.clone().unwrap_or_default()
-                    "TODO:",
-                )
+            table::column("Album", |v: &TrackView| {
+                let album_name = v.album_name.clone().unwrap_or("Unknown album".to_owned());
+
+                rich_text![widget::span(album_name).link(Route::Album(v.track.album_id.clone()))]
+                    .on_link_click(Message::ChangeRoute)
             })
-            .align_x(Center)
+            .width(FillPortion(2))
             .align_y(Center),
             // Genre
-            table::column("Genre", |track: &Track| {
-                text(
-                    // Join genre names by comma
-                    // track.
-                    //     .genres
-                    //     .iter()
-                    //     .map(|g| g.name.clone())
-                    //     .collect::<Vec<String>>()
-                    //     .join(", "),
-                    "TODO:",
+            table::column("Genre", |v: &TrackView| {
+                v.genres.clone().into_links(
+                    |RelatedGenre { id, name }| {
+                        (name.unwrap_or("Unknown genre".to_owned()), Route::Genre(id))
+                    },
+                    Message::ChangeRoute,
                 )
             })
-            .align_x(Center)
+            .width(FillPortion(2))
             .align_y(Center),
         ];
 

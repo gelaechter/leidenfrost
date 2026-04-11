@@ -1,12 +1,8 @@
 use iced::{
-    Element,
-    Length::Fill,
-    Task,
-    message::MaybeClone,
-    widget::{
+    Element, Length::Fill, Subscription, Task, keyboard::{self, Key, key::Named}, message::MaybeClone, widget::{
         column, container,
         pane_grid::{Axis, Configuration, ResizeEvent},
-    },
+    }
 };
 
 use iced::widget::pane_grid;
@@ -23,14 +19,17 @@ use crate::{
 
 pub struct App {
     panes: pane_grid::State<Pane>,
+    settings: Settings,
     sidebar: Sidebar,
     router: Router,
     queue: Queue,
     player_bar: Player,
 }
 
+#[derive(Default)]
 pub struct Settings {
     selected_apis: Vec<Endpoint>,
+    debug_overlay: bool,
 }
 
 impl Default for App {
@@ -39,6 +38,7 @@ impl Default for App {
         let router = Router::default();
         let queue = Queue::default();
         let player_bar = Player::default();
+        let settings = Settings::default();
 
         // Creates a new pane state and immediately splits it
         let panes = pane_grid::State::<Pane>::with_configuration(Configuration::Split {
@@ -55,6 +55,7 @@ impl Default for App {
 
         Self {
             panes,
+            settings,
             sidebar,
             router,
             queue,
@@ -80,6 +81,7 @@ pub enum Message {
     Queue(QueueMessage),
     Router(router::Message),
     PlayerBar(PlayerMessage),
+    KeyboardEvent(keyboard::Event)
 }
 
 /// The main layout of the application
@@ -116,7 +118,9 @@ impl App {
                 // Currently irrefutable
                 self.sidebar.update(sidebar_message.clone());
                 if let SidebarMessage::UpdateRoute(route) = sidebar_message {
-                    self.router.update(router::Message::ChangeRoute(route)).map(Message::Router)
+                    self.router
+                        .update(router::Message::ChangeRoute(route))
+                        .map(Message::Router)
                 } else {
                     Task::none()
                 }
@@ -132,6 +136,19 @@ impl App {
                 self.player_bar.update(player_message);
                 Task::none()
             }
+            Message::KeyboardEvent(event) => {
+                match event {
+                    keyboard::Event::KeyPressed { key: Key::Named(Named::F11), .. } => {
+                        self.settings.debug_overlay = !self.settings.debug_overlay;
+                        Task::none()
+                    }
+                    _ => Task::none(),
+                }
+            },
         }
+    }
+
+    pub fn subscription(&self) -> Subscription<Message> {
+        keyboard::listen().map(Message::KeyboardEvent)
     }
 }

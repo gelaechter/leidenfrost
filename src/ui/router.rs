@@ -13,15 +13,21 @@ pub struct Router {
     tracks: Tracks,
 }
 
-#[derive(Default, Clone, PartialEq, Eq, Debug, Copy)]
+#[derive(Default, Clone, PartialEq, Eq, Debug)]
 pub enum Route {
     #[default]
     Home,
     Favorites,
+    // A specific album identified by Id
+    Album(String),
     Albums,
     Tracks,
     AlbumArtists,
+    /// A specific artist identified by Id
+    Artist(String),
     Artists,
+    /// A specific genre identified by Id
+    Genre(String),
     Genres,
 }
 
@@ -45,6 +51,9 @@ impl Router {
             Route::AlbumArtists => todo!(),
             Route::Artists => todo!(),
             Route::Genres => todo!(),
+            Route::Artist(_) => todo!(),
+            Route::Genre(_) => todo!(),
+            Route::Album(_) => todo!(),
         })
         .style(|_| Style::default().background(Color::from_rgb(0.9, 0.9, 0.9)))
         .into()

@@ -40,6 +40,7 @@ impl Sidebar {
             ]
             .spacing(8),
         )
+        .on_press(SidebarMessage::UpdateRoute(route.clone()))
         .style(move |theme, status| {
             let palette = theme.extended_palette();
             button::Style {
@@ -61,7 +62,6 @@ impl Sidebar {
             }
         })
         .width(Fill)
-        .on_press(SidebarMessage::UpdateRoute(route))
         .into()
     }
 
