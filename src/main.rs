@@ -12,8 +12,6 @@ fn main() {
     // Component tests (of these only one should be enabled)
     // ui::components::image::test_images_concurrency();
 
-    
-
     iced::application(App::default, App::update, App::view)
         .executor::<tokio::runtime::Runtime>()
         .font(LUCIDE_FONT_BYTES)

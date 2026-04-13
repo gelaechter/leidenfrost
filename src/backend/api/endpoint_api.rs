@@ -1,7 +1,10 @@
 use reqwest::RequestBuilder;
 use url::Url;
 
-use crate::backend::{data_view::TrackView, db::models::{Album, Artist, Disc, Genre, Playlist, Track}};
+use crate::backend::{
+    data_view::{PlaylistView, TrackView},
+    db::models::{Album, Artist, Disc, Genre, Playlist, Track},
+};
 
 /// The different Endpoints that are currently supported
 #[derive(Clone, Debug)]
@@ -45,10 +48,7 @@ pub enum SearchResult {
     Album(Album),
     Playlist(Playlist),
     Genre(Genre),
-    LyricMatch{
-        matched_lyric: String,
-        track: Track
-    }    
+    LyricMatch { matched_lyric: String, track: Track },
 }
 
 pub trait ApiContract {
@@ -80,7 +80,13 @@ pub trait ApiContract {
     async fn get_genres(&self) -> color_eyre::Result<Vec<Genre>>;
 
     /// Fetches all playlists
-    async fn get_playlists(&self) -> color_eyre::Result<Vec<Playlist>>;
+    async fn get_playlists(&self) -> color_eyre::Result<Vec<PlaylistView>>;
+
+    // Fetches a playlist
+    async fn get_playlist(&self, playlist_id: String) -> color_eyre::Result<PlaylistView>;
+
+    /// Fetches playlist tracks
+    async fn get_playlist_tracks(&self, playlist_id: String) -> color_eyre::Result<Vec<TrackView>>;
 
     /// Fetches songs containing a search term
     async fn search(&self, search_term: String) -> color_eyre::Result<Vec<SearchResult>>;

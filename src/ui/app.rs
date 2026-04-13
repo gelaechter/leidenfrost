@@ -1,8 +1,13 @@
 use iced::{
-    Element, Length::Fill, Subscription, Task, keyboard::{self, Key, key::Named}, message::MaybeClone, widget::{
+    Element,
+    Length::Fill,
+    Subscription, Task,
+    keyboard::{self, Key, key::Named},
+    message::MaybeClone,
+    widget::{
         column, container,
         pane_grid::{Axis, Configuration, ResizeEvent},
-    }
+    },
 };
 
 use iced::widget::pane_grid;
@@ -13,7 +18,7 @@ use crate::{
         player::{Player, PlayerMessage},
         queue::{Queue, QueueMessage},
         router::{self, Router},
-        sidebar::{Sidebar, SidebarMessage},
+        sidebar::{Message, Sidebar},
     },
 };
 
@@ -77,11 +82,11 @@ pub enum Pane {
 pub enum Message {
     PaneDragged(pane_grid::DragEvent),
     PaneResized(pane_grid::ResizeEvent),
-    Sidebar(SidebarMessage),
+    Sidebar(Message),
     Queue(QueueMessage),
     Router(router::Message),
     PlayerBar(PlayerMessage),
-    KeyboardEvent(keyboard::Event)
+    KeyboardEvent(keyboard::Event),
 }
 
 /// The main layout of the application
@@ -117,7 +122,7 @@ impl App {
             Message::Sidebar(sidebar_message) => {
                 // Currently irrefutable
                 self.sidebar.update(sidebar_message.clone());
-                if let SidebarMessage::UpdateRoute(route) = sidebar_message {
+                if let Message::UpdateRoute(route) = sidebar_message {
                     self.router
                         .update(router::Message::ChangeRoute(route))
                         .map(Message::Router)
@@ -136,14 +141,15 @@ impl App {
                 self.player_bar.update(player_message);
                 Task::none()
             }
-            Message::KeyboardEvent(event) => {
-                match event {
-                    keyboard::Event::KeyPressed { key: Key::Named(Named::F11), .. } => {
-                        self.settings.debug_overlay = !self.settings.debug_overlay;
-                        Task::none()
-                    }
-                    _ => Task::none(),
+            Message::KeyboardEvent(event) => match event {
+                keyboard::Event::KeyPressed {
+                    key: Key::Named(Named::F11),
+                    ..
+                } => {
+                    self.settings.debug_overlay = !self.settings.debug_overlay;
+                    Task::none()
                 }
+                _ => Task::none(),
             },
         }
     }

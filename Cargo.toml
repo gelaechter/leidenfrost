@@ -5,13 +5,15 @@ edition = "2024"
 
 [dependencies]
 futures = "0.3.32"
-iced = { version = "0.14.0", features = [
+iced = { git = "https://github.com/iced-rs/iced.git", rev= "d1dd372a1c34251c9e5e57d84e4a9f037474d72b", features = [
     "image", 
-    "sipper", 
+    "sipper",
+    # "debug",
     # "time-travel", 
     "tokio", 
-    "advanced"] }
-iced_fonts = { version = "0.3.0", features = ["lucide"] }
+    "advanced"
+] }
+iced_fonts = { path = "../iced_fonts", features = ["lucide"] }
 libmpv2 = "5.0.3"
 tokio = { version = "1.50.0", features = ["full", "test-util", "tracing"] }
 serde = { version = "1.0.228", features = ["derive"] }

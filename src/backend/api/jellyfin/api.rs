@@ -1,11 +1,13 @@
 use crate::backend::{
     api::{
         endpoint_api::{ApiContract, SearchResult},
-        jellyfin::{data::{BaseItemDtoQueryResult, BaseItemKind}, normalize::Normalize},
-    }, data_view::TrackView, db::{
-        models::{Album, Artist, Disc, Genre, Playlist, Track},
-        sqlite::DB,
-    }
+        jellyfin::{
+            data::{BaseItemDtoQueryResult, BaseItemKind},
+            normalize::Normalize,
+        },
+    },
+    data_view::{PlaylistView, TrackView},
+    db::models::{Album, Artist, Disc, Genre},
 };
 use std::collections::HashSet;
 
@@ -25,20 +27,6 @@ use serde::Serialize;
 use serde_json::Value;
 use serde_json::json;
 use url::Url;
-
-#[tokio::test]
-pub async fn test_create_jf_api() {
-    let jf = JellyfinApi::auth_user_password(
-        Url::parse("http://***REMOVED***").unwrap(),
-        "***REMOVED***".to_string(),
-        "***REMOVED***".to_string(),
-    )
-    .await;
-
-    let db = DB::open().await.unwrap();
-
-    jf.index_data(&db).await;
-}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct JellyfinApi {
@@ -186,7 +174,8 @@ impl JellyfinApi {
         sipper(move |mut sender| async move {
             let mut types = HashSet::new();
 
-            let json = self.request(
+            let json = self
+                .request(
                     "/Users/07bd2df2d1bf4b51b33082acf300aeba/Items".to_owned(),
                     &json!({
                         "Recursive": true,
@@ -199,8 +188,7 @@ impl JellyfinApi {
 
             dbg!(&json);
 
-            let query_result: BaseItemDtoQueryResult = serde_json::from_value(json)
-            .unwrap();
+            let query_result: BaseItemDtoQueryResult = serde_json::from_value(json).unwrap();
 
             dbg!(&query_result);
 
@@ -241,7 +229,7 @@ impl ApiContract for JellyfinApi {
         todo!()
     }
 
-    /// TODO: currently doesn't fetch everything? 
+    /// TODO: currently doesn't fetch everything?
     /// or the order is just off
     async fn get_tracks(&self) -> color_eyre::Result<Vec<TrackView>> {
         let query_result: BaseItemDtoQueryResult = serde_json::from_value(
@@ -250,7 +238,7 @@ impl ApiContract for JellyfinApi {
                 &json!({
                     "Recursive": true,
                     "IncludeItemTypes": BaseItemKind::Audio,
-                    "Limit": 1000
+                    // "Limit": 100
                 }),
             )
             .await
@@ -295,11 +283,22 @@ impl ApiContract for JellyfinApi {
         todo!()
     }
 
-    async fn get_playlists(&self) -> color_eyre::Result<Vec<Playlist>> {
+    async fn get_playlists(&self) -> color_eyre::Result<Vec<PlaylistView>> {
         todo!()
     }
 
     async fn search(&self, search_term: String) -> color_eyre::Result<Vec<SearchResult>> {
+        todo!()
+    }
+
+    async fn get_playlist(
+        &self,
+        playlist_id: String,
+    ) -> color_eyre::Result<crate::backend::data_view::PlaylistView> {
+        todo!()
+    }
+
+    async fn get_playlist_tracks(&self, playlist_id: String) -> color_eyre::Result<Vec<TrackView>> {
         todo!()
     }
 }

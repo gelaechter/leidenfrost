@@ -1,5 +1,4 @@
-
-use crate::backend::db::models::Track;
+use crate::backend::db::models::{Playlist, Track};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelatedArtist {
@@ -28,4 +27,13 @@ pub struct TrackView {
     pub album_name: Option<String>,
     /// The genres that apply to this track
     pub genres: Vec<RelatedGenre>,
+}
+
+/// A playlist view only holds metadata about a playlist
+/// If you need the playlist tracks use [`ApiContract::`]
+pub struct PlaylistView {
+    pub playlist: Playlist,
+    pub track_count: Option<i64>,
+    /// The duration of the playlist in seconds
+    pub duration: Option<i64>,
 }

@@ -1,6 +1,7 @@
 use futures::Stream;
-use futures::{StreamExt, task::AtomicWaker};
-use libmpv2::{EndFileReason, Format, GetData, LogLevel, Mpv};
+use futures::StreamExt;
+use futures::task::AtomicWaker;
+use libmpv2::{EndFileReason, Format, LogLevel, Mpv};
 use std::{
     pin::Pin,
     sync::Arc,
@@ -17,7 +18,6 @@ pub enum OwnedMpvEvent {
         log_level: LogLevel,
     },
     GetPropertyReply {
-        
         name: String,
         value: MpvPropertyValue,
         reply_userdata: u64,

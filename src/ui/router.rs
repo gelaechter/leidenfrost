@@ -1,8 +1,11 @@
 use iced::{
-    Color, Element,
+    Element,
     Length::Fill,
     Task,
-    widget::{self, container::Style},
+    widget::{
+        self,
+        container::background,
+    },
 };
 
 use crate::ui::routes::tracks::{self, Tracks};
@@ -41,7 +44,6 @@ impl Router {
     pub fn view(&self) -> Element<'_, Message> {
         widget::container(match self.route {
             Route::Home => widget::container("text")
-                .style(|_| Style::default().background(Color::from_rgb(0.9, 0.9, 0.9)))
                 .width(Fill)
                 .height(Fill)
                 .into(),
@@ -55,7 +57,7 @@ impl Router {
             Route::Genre(_) => todo!(),
             Route::Album(_) => todo!(),
         })
-        .style(|_| Style::default().background(Color::from_rgb(0.9, 0.9, 0.9)))
+        .style(|theme| background(theme.palette().background.weakest.color))
         .into()
     }
 

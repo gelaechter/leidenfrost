@@ -1,10 +1,40 @@
 use iced::widget::{
-    self,
+    self, rich_text,
     text::{Rich, Span},
 };
 
+pub trait IntoLink {
+    fn link<'a, Link, Message>(
+        self,
+        link: Link,
+        on_link_click: impl Fn(Link) -> Message + 'a,
+    ) -> Rich<'a, Link, Message>
+    where
+        Link: Clone + 'static;
+}
+
+impl<S> IntoLink for S
+where
+    S: ToString,
+{
+    /// Turns an item into a clickable link
+    fn link<'a, Link, Message>(
+        self,
+        link: Link,
+        on_link_click: impl Fn(Link) -> Message + 'a,
+    ) -> Rich<'a, Link, Message>
+    where
+        Link: Clone + 'static,
+    {
+        rich_text![widget::span(self.to_string()).link(link)].on_link_click(on_link_click)
+    }
+}
+
 pub trait IntoLinks {
     type Item;
+    
+    /// Constructs [`text::rich::Rich`] text links from any iterable as long as the
+    /// transformation function `f` can turn it into a (String, Link) pair.
     fn into_links<'a, F, Link, Message>(
         self,
         f: F,
@@ -22,8 +52,6 @@ where
 {
     type Item = I::Item;
 
-    /// Constructs [`text::rich::Rich`] text links from any iterable as long as the
-    /// transformation function `f` can turn it into a (String, Link) pair.
     fn into_links<'a, F, Link, Message>(
         self,
         f: F,

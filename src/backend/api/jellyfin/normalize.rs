@@ -14,8 +14,8 @@ use crate::backend::{
             },
         },
     },
-    data_view::{RelatedArtist, RelatedGenre, TrackView},
-    db::models::Track,
+    data_view::{PlaylistView, RelatedArtist, RelatedGenre, TrackView},
+    db::models::{Playlist, Track},
 };
 
 pub trait Normalize<T, R>: Sized + ApiContract {
@@ -170,6 +170,67 @@ impl Normalize<BaseItemDto, TrackView> for JellyfinApi {
                 .into_iter()
                 .map(|NameGuidPair { id, name }| RelatedGenre { id, name })
                 .collect(),
+        }
+    }
+}
+
+impl Normalize<BaseItemDto, PlaylistView> for JellyfinApi {
+    fn normalize(&self, value: BaseItemDto) -> PlaylistView {
+        let BaseItemDto {
+            id,
+            name,
+            image_tags,
+            image_blur_hashes,
+            run_time_ticks,
+            child_count,
+            type_,
+            user_data,
+            ..
+        } = value;
+
+        let UserItemDataDto { is_favorite, .. } = user_data.unwrap_or_default();
+
+        // Check if our item is actually an audio track
+        // TODO: Should probably be recoverable but since we should deserialize based on BaseItemKind this is fine
+        assert!(
+            matches!(type_, Some(BaseItemKind::Playlist)),
+            "Tried to normalize a non BaseItemKind::Playlist as a Playlist"
+        );
+
+        let playlist = Playlist {
+            name,
+            image_url: {
+                let id = match image_tags {
+                    // If the playlist has a primary image
+                    Some(BaseItemImageTags {
+                        primary: Some(_), ..
+                    }) => id.clone(), // then we need the playlist id
+                    _ => None,
+                };
+
+                id.map(|id| {
+                    self.url()
+                        .join(&format!("/Items/{id}/Images/Primary"))
+                        .unwrap()
+                        .into()
+                })
+            },
+            image_blur_hash: image_blur_hashes.and_then(|blurhashes| {
+                blurhashes
+                    .primary
+                    .or_empty()
+                    .into_iter()
+                    .next()
+                    .map(|ImageBlurHash { blurhash, .. }| blurhash)
+            }),
+            id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+            user_favorite: is_favorite,
+        };
+
+        PlaylistView {
+            playlist,
+            track_count: child_count,
+            duration: run_time_ticks.map(|t| t / 10_000_000),
         }
     }
 }
