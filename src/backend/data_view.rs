@@ -31,6 +31,7 @@ pub struct TrackView {
 
 /// A playlist view only holds metadata about a playlist
 /// If you need the playlist tracks use [`ApiContract::`]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlaylistView {
     pub playlist: Playlist,
     pub track_count: Option<i64>,

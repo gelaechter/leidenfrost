@@ -3,7 +3,6 @@ use iced::{
     Length::Fill,
     Subscription, Task,
     keyboard::{self, Key, key::Named},
-    message::MaybeClone,
     widget::{
         column, container,
         pane_grid::{Axis, Configuration, ResizeEvent},
@@ -16,9 +15,9 @@ use crate::{
     backend::api::endpoint_api::Endpoint,
     ui::{
         player::{Player, PlayerMessage},
-        queue::{Queue, QueueMessage},
+        queue::{self, Queue},
         router::{self, Router},
-        sidebar::{Message, Sidebar},
+        sidebar::{self, Sidebar},
     },
 };
 
@@ -82,8 +81,8 @@ pub enum Pane {
 pub enum Message {
     PaneDragged(pane_grid::DragEvent),
     PaneResized(pane_grid::ResizeEvent),
-    Sidebar(Message),
-    Queue(QueueMessage),
+    Sidebar(sidebar::Message),
+    Queue(queue::Message),
     Router(router::Message),
     PlayerBar(PlayerMessage),
     KeyboardEvent(keyboard::Event),
@@ -120,14 +119,21 @@ impl App {
                 Task::none()
             }
             Message::Sidebar(sidebar_message) => {
-                // Currently irrefutable
-                self.sidebar.update(sidebar_message.clone());
-                if let Message::UpdateRoute(route) = sidebar_message {
-                    self.router
-                        .update(router::Message::ChangeRoute(route))
-                        .map(Message::Router)
+                // 
+                let task: Task<Message> = self
+                    .sidebar
+                    .update(sidebar_message.clone())
+                    .map(Message::Sidebar);
+
+                if let sidebar::Message::UpdateRoute(route) = sidebar_message {
+                    Task::batch([
+                        task,
+                        self.router
+                            .update(router::Message::ChangeRoute(route))
+                            .map(Message::Router),
+                    ])
                 } else {
-                    Task::none()
+                    task
                 }
             }
             Message::Queue(queue_message) => {

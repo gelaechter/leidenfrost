@@ -5,12 +5,12 @@ use iced::widget::column;
 pub struct Queue {}
 
 #[derive(Debug, Clone)]
-pub enum QueueMessage {}
+pub enum Message {}
 
 impl Queue {
-    pub fn view(&self) -> Element<'_, QueueMessage> {
+    pub fn view(&self) -> Element<'_, Message> {
         column!["Queue",].into()
     }
 
-    pub fn update(&mut self, message: QueueMessage) {}
+    pub fn update(&mut self, message: Message) {}
 }

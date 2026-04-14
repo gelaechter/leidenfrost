@@ -172,6 +172,7 @@ impl Tracks {
 
                 Task::perform(
                     async {
+                        // TODO: Replace with global state
                         let jf = JellyfinApi::auth_user_password(
                             Url::parse("http://***REMOVED***").unwrap(),
                             "***REMOVED***".to_string(),

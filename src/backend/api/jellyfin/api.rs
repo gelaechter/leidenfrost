@@ -39,7 +39,6 @@ pub struct JellyfinApi {
     client: reqwest::Client,
 }
 
-#[allow(refining_impl_trait)]
 impl UserPasswordAuth for JellyfinApi {
     async fn auth_user_password(url: Url, username: String, password: String) -> JellyfinApi {
         let client = reqwest::Client::new();
@@ -238,7 +237,7 @@ impl ApiContract for JellyfinApi {
                 &json!({
                     "Recursive": true,
                     "IncludeItemTypes": BaseItemKind::Audio,
-                    // "Limit": 100
+                    "Limit": 100
                 }),
             )
             .await
@@ -283,12 +282,32 @@ impl ApiContract for JellyfinApi {
         todo!()
     }
 
-    async fn get_playlists(&self) -> color_eyre::Result<Vec<PlaylistView>> {
+    async fn search(&self, search_term: String) -> color_eyre::Result<Vec<SearchResult>> {
         todo!()
     }
 
-    async fn search(&self, search_term: String) -> color_eyre::Result<Vec<SearchResult>> {
-        todo!()
+    async fn get_playlists(&self) -> color_eyre::Result<Vec<PlaylistView>> {
+        let query_result: BaseItemDtoQueryResult = serde_json::from_value(
+            self.request(
+                "/Users/07bd2df2d1bf4b51b33082acf300aeba/Items".to_owned(),
+                &json!({
+                    "Recursive": true,
+                    "IncludeItemTypes": BaseItemKind::Playlist,
+                    // "Limit": 100
+                }),
+            )
+            .await
+            .unwrap(),
+        )
+        .unwrap();
+
+        let tracks = query_result
+            .items
+            .into_iter()
+            .map(|item| self.normalize(item))
+            .collect();
+
+        Ok(tracks)
     }
 
     async fn get_playlist(
