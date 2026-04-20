@@ -1,3 +1,4 @@
+use core::panic;
 use iced::{
     ContentFit, Element,
     Length::Fill,
@@ -13,10 +14,12 @@ use sea_orm::ExprTrait;
 use serde::Deserialize;
 use serde_json::json;
 use std::{
+    collections::HashMap,
     fmt,
     hash::Hash,
     io,
     sync::{Arc, LazyLock},
+    vec::IntoIter,
 };
 use url::Url;
 use uuid::Uuid;
@@ -25,9 +28,67 @@ use crate::backend::api::endpoint_api::Endpoint;
 
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
+#[derive(Default)]
+pub struct Manager {
+    images: HashMap<Uuid, Image>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    ImageDriver(Uuid, IMessage),
+}
+
+impl Manager {
+    fn uuid(url: &Url) -> Uuid {
+        Uuid::new_v3(
+            &Uuid::NAMESPACE_URL,
+            // TODO: Only use base-path / disregard any queries
+            url.as_str().as_bytes(),
+        )
+    }
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert<I>(&mut self, images: I)
+    where
+        I: IntoIterator<Item = Image>,
+    {
+        self.images.extend(
+            images
+                .into_iter()
+                .map(|image| (Self::uuid(&image.url), image)),
+        );
+    }
+
+    pub fn view<'a>(&self, url: impl Into<&'a Url>) -> Option<Element<'_, Message>> {
+        let uuid = Self::uuid(url.into());
+        self.images
+            .get(&uuid)
+            .map(move |image| image.view().map(move |m| Message::ImageDriver(uuid, m)))
+    }
+
+    pub fn update(&mut self, message: Message) -> Task<Message> {
+        match message {
+            Message::ImageDriver(uuid, image_message) => match self.images.get_mut(&uuid) {
+                Some(image) => image
+                    .update(image_message)
+                    .map(move |m| Message::ImageDriver(uuid, m)),
+                None => {
+                    log::warn!(
+                        "Received message {image_message:?} in event loop for non-existing image {uuid:?}"
+                    );
+                    Task::none()
+                }
+            },
+        }
+    }
+}
+
 /// An image that will automatically try to fetch the correct image size from the API
 /// this is done through the ImageSize trait of the API.
-/// An ImageSize implementor can be passed to the Image as a generic
+/// An ImageSize implementer can be passed to the Image as a generic
 #[derive(Debug, Clone)]
 pub struct Image {
     url: Url,
@@ -47,58 +108,42 @@ pub struct Image {
 }
 
 #[derive(Debug, Clone)]
-pub enum Message {
-    ImageHidden,
+enum IMessage {
+    Hidden,
     /// The image has become visible
-    ImageShown(Size),
+    Shown(Size),
     /// The image was resized
-    ImageResized(Size),
+    Resized(Size),
     /// Message that the image has been downloaded and allocated
-    ImageDownloaded(Result<image::Handle, Error>),
+    Downloaded(Result<image::Handle, Error>),
 }
 
 impl Image {
-    pub fn uuid(url: &Url) -> Uuid {
-        Uuid::new_v3(
-            &Uuid::NAMESPACE_URL,
-            // TODO: Only use base-path / disregard any queries
-            url.as_str().as_bytes(),
-        )
-    }
-
     /// Creates a new image
-    pub fn new(url: Url, blurhash: Option<String>) -> (Uuid, Self) {
-        (
-            Self::uuid(&url),
-            Image {
-                url,
-                blurhash,
-                image_resizer: None,
-                size: Size::default(),
-                status: None,
-                _download_task: None,
-                _blurhash_task: None,
-            },
-        )
+    pub fn new(url: impl Into<Url>) -> Self {
+        Image {
+            url: url.into(),
+            blurhash: None,
+            image_resizer: None,
+            size: Size::default(),
+            status: None,
+            _download_task: None,
+            _blurhash_task: None,
+        }
     }
 
-    pub fn new_autosized(url: Url, blurhash: Option<String>, resizer: Endpoint) -> (Uuid, Self) {
-        (
-            Self::uuid(&url),
-            Image {
-                url,
-                blurhash,
-                size: Size::default(),
-                image_resizer: Some(resizer),
-                status: None,
-                _download_task: None,
-                _blurhash_task: None,
-            },
-        )
+    pub fn blurhash_maybe(mut self, blurhash: Option<String>) -> Self {
+        self.blurhash = blurhash;
+        self
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
-        let image: Element<'_, Message> = if let Some(handle) = &self.status {
+    pub fn autosized(mut self, endpoint: Endpoint) -> Self {
+        self.image_resizer = Some(endpoint);
+        self
+    }
+
+    fn view(&self) -> Element<'_, IMessage> {
+        let image: Element<'_, IMessage> = if let Some(handle) = &self.status {
             // Either the blurhash or the image have been loaded
             widget::image(handle)
                 // Use width an height instead of expand to enforce full size and prevent resizing
@@ -114,9 +159,9 @@ impl Image {
         };
 
         let sensor = widget::sensor(image)
-            .on_resize(Message::ImageResized)
-            .on_show(Message::ImageShown)
-            .on_hide(Message::ImageHidden);
+            .on_resize(IMessage::Resized)
+            .on_show(IMessage::Shown)
+            .on_hide(IMessage::Hidden);
 
         widget::container(sensor)
             .style(container::rounded_box)
@@ -125,10 +170,10 @@ impl Image {
             .into()
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    fn update(&mut self, message: IMessage) -> Task<IMessage> {
         match message {
             // Once the image is shown / size is changed
-            Message::ImageShown(size) => {
+            IMessage::Shown(size) => {
                 let size = Size {
                     width: size.width.round() as u32,
                     height: size.height.round() as u32,
@@ -138,7 +183,7 @@ impl Image {
 
                 // Abort if we're already working
                 if self._download_task.is_some() || self.status.is_some() {
-                    return Task::none()
+                    return Task::none();
                 };
 
                 match &self.blurhash {
@@ -148,25 +193,25 @@ impl Image {
                     Some(_) => Task::batch([self.blurhash_task(), self.download_task()]),
                 }
             }
-            Message::ImageHidden => {
+            IMessage::Hidden => {
                 // if let Some(download_task) = &self._download_task.take() {
                 //     download_task.abort();
                 // };
                 Task::none()
             }
-            Message::ImageResized(size) => {
+            IMessage::Resized(size) => {
                 // If autosizing is active and the new resolution has greater dimensions
                 // then redownload the new resolution
                 if self.image_resizer.is_some()
                     && size.width > self.size.width as f32
                     && size.height > self.size.height as f32
                 {
-                    Task::done(Message::ImageShown(size))
+                    Task::done(IMessage::Shown(size))
                 } else {
                     Task::none()
                 }
             }
-            Message::ImageDownloaded(handle) => {
+            IMessage::Downloaded(handle) => {
                 if let Ok(handle) = handle {
                     self.status = Some(handle);
                     // Download has concluded so abort blurhash decoding
@@ -181,9 +226,9 @@ impl Image {
         }
     }
 
-    /// Asynchronously downloads the image from the url
+    /// Asynchronously downloads the image from the URL
     /// automatically downloads a sized version based on the resizer
-    pub async fn download(
+    async fn download(
         url: Url,
         size: Size<u32>,
         resizer: Option<Endpoint>,
@@ -199,14 +244,13 @@ impl Image {
             None => request,
         };
 
-        // Resizer::set_image_resolution is an identity function for NoAutoSize
         let bytes = request.send().await?.error_for_status()?.bytes().await?;
 
         Ok(Bytes(bytes))
     }
 
     /// Asynchronously decodes the blurhash for the given size
-    pub async fn blurhash(blurhash: String, size: Size<u32>) -> Result<Rgba, Error> {
+    async fn decode_blurhash(blurhash: String, size: Size<u32>) -> Result<Rgba, Error> {
         tokio::task::spawn_blocking(move || {
             let pixels = blurhash::decode(&blurhash, size.width, size.height, 1.0)?;
 
@@ -219,7 +263,7 @@ impl Image {
         .await?
     }
 
-    pub fn download_task(&mut self) -> Task<Message> {
+    fn download_task(&mut self) -> Task<IMessage> {
         let Self {
             url,
             size,
@@ -248,7 +292,7 @@ impl Image {
                         .map_err(|_| Error::ImageDecodingFailed)
                 })
                 .and_then(|a| Task::done(Ok(a.handle().clone())))
-                .map(Message::ImageDownloaded)
+                .map(IMessage::Downloaded)
                 .abortable();
 
         // Set download handle and return value
@@ -256,7 +300,7 @@ impl Image {
         download_task
     }
 
-    fn blurhash_task(&mut self) -> Task<Message> {
+    fn blurhash_task(&mut self) -> Task<IMessage> {
         let Self {
             size,
             blurhash,
@@ -270,7 +314,7 @@ impl Image {
         }
 
         // Decode blurhash
-        let (blurhash_task, blurhash_handle) = Task::future(Self::blurhash(
+        let (blurhash_task, blurhash_handle) = Task::future(Self::decode_blurhash(
             blurhash
                 .clone()
                 .expect("The blurhash_task function should only be called when blurhash is Some")
@@ -292,7 +336,7 @@ impl Image {
                 image::Handle::from_rgba(width, height, pixels),
             ))
         })
-        .map(Message::ImageDownloaded)
+        .map(IMessage::Downloaded)
         .abortable();
 
         // Set blurhash handle and return value

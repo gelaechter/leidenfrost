@@ -24,13 +24,17 @@ use crate::{
         },
         data_view::PlaylistView,
     },
-    ui::router::Route,
+    ui::{
+        components::image::{self, Image},
+        router::Route,
+    },
 };
 
 #[derive(Default)]
 pub struct Sidebar {
     route: Route,
     playlists: Vec<PlaylistView>,
+    images: image::Manager,
 }
 
 #[derive(Clone, Debug)]
@@ -38,6 +42,7 @@ pub enum Message {
     FetchPlaylists,
     PlaylistsFetched(Vec<PlaylistView>),
     UpdateRoute(Route),
+    ImageDriver(image::Message),
 }
 
 impl Sidebar {
@@ -62,6 +67,7 @@ impl Sidebar {
                 self.tab_button(lucide::tag(), text("Genres").font(bold), Route::Genres),
                 space().height(28),
                 text("Playlists").font(bold),
+                self.playlists()
             ]
             .spacing(8),
         )
@@ -97,9 +103,17 @@ impl Sidebar {
                 )
             }
             Message::PlaylistsFetched(playlist_views) => {
+                // Load images
+                self.images.insert(playlist_views.iter().filter_map(|view| {
+                    let url = view.playlist.image_url.clone();
+                    let blurhash = view.playlist.image_blur_hash.clone();
+                    url.map(|url| Image::new(url).blurhash_maybe(blurhash))
+                }));
+
                 self.playlists = playlist_views;
                 Task::none()
             }
+            Message::ImageDriver(m) => self.images.update(m).map(Message::ImageDriver),
         }
     }
 
@@ -143,48 +157,34 @@ impl Sidebar {
     }
 
     pub fn playlists(&self) -> Element<'_, Message> {
-        // let playlists = self.playlists.iter().map(|view| {
-        //     let image = if let Some(image_id) =
-        //         view.playlist.image_url.as_ref().map(|u| Image::uuid(u))
-        //         && let Some(image) = self.images.get(&image_id)
-        //     {
-        //         // Show an image if it's ready
-        //         image.view().map(move |m| Message::ImageDriver(image_id, m))
-        //     } else {
-        //         // Or show a placeholder
-        //         lucide::disc_album().size(18).into()
-        //     };
+        let playlists = self.playlists.iter().map(|view| {
+            let image = if let Some(image_url) = view.playlist.image_url.as_ref()
+                && let Some(image) = self.images.view(image_url)
+            {
+                // Show an image if it's ready
+                image.map(Message::ImageDriver)
+            } else {
+                // Or show a placeholder
+                lucide::disc_album().size(18).into()
+            };
 
-        //     let title = widget::text(view.playlist.name.clone().unwrap_or("No title".to_owned()))
-        //         .wrapping(Wrapping::None)
-        //         .ellipsis(text::Ellipsis::End);
+            let title = widget::text(view.playlist.name.clone().unwrap_or("No title".to_owned()))
+                .wrapping(Wrapping::None)
+                .ellipsis(text::Ellipsis::End);
 
-        //     let artist_text = artists
-        //         .clone()
-        //         .into_links(
-        //             |RelatedArtist { id, name }| {
-        //                 (
-        //                     name.unwrap_or("Unknown artist".to_owned()),
-        //                     Route::Artist(id.to_string()),
-        //                 )
-        //             },
-        //             Message::ChangeRoute,
-        //         )
-        //         .wrapping(Wrapping::None)
-        //         .ellipsis(text::Ellipsis::End)
-        //         .size(14);
+            row![
+                widget::container(image).center(64),
+                widget::space().width(8),
+                widget::container(column![title, widget::space().width(2)])
+                    .center_y(64)
+                    .clip(true)
+            ]
+            .into()
+        });
 
-        //     row![
-        //         widget::container(image).center(64),
-        //         widget::space().width(8),
-        //         widget::container(column![title, widget::space().width(2), artist_text])
-        //             .center_y(64)
-        //             .clip(true)
-        //     ]
-        //     .into()
-        // });
-
-        // widget::column(playlists).into()
-        todo!()
+        let playlists = widget::column(playlists);
+        widget::sensor(playlists)
+            .on_show(|_| Message::FetchPlaylists)
+            .into()
     }
 }

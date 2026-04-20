@@ -15,7 +15,7 @@ impl DB {
         // TODO: Naive check if database works
         db.ping().await?;
 
-        // synchronizes database schema with entity definitions
+        // Synchronizes database schema with entity definitions
         db.get_schema_registry(module_path!().split("::").next().unwrap())
             .sync(&db)
             .await?;

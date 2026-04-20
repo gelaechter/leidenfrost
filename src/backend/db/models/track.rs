@@ -42,7 +42,7 @@ pub struct Model {
     pub bit_rate: Option<i64>,
     /// The bpm of this song
     pub bpm: Option<i64>,
-    /// The number of audio channles in this audio file
+    /// The number of audio channels in this audio file
     pub channels: Option<i64>,
     /// The container format of this songs audio file
     pub container: Option<String>,
@@ -51,7 +51,7 @@ pub struct Model {
     /// The genres this track belongs to
     #[sea_orm(has_many, via = "track_genres")]
     pub genres: HasMany<super::genre::Entity>,
-    /// The url of this tracks cover image
+    /// The URL of this tracks cover image
     pub image_url: Option<super::OrmUrl>,
     /// The blur hash of this tracks cover
     /// See https://blurha.sh/ for more information
@@ -62,15 +62,15 @@ pub struct Model {
     pub lyrics: Option<Lyrics>,
     /// The name of this track
     pub title: Option<String>,
-    /// The file path of this track
+    /// The filepath of this track
     pub file_path: Option<String>,
     /// How often this track has been played
     pub play_count: Option<i64>,
-    /// When this track was realeased
+    /// When this track was released
     pub release_date: Option<NaiveDate>,
     /// The file size of this track in bytes
     pub file_size: Option<i64>,
-    /// The url pointing to the audio stream of this track
+    /// The URL pointing to the audio stream of this track
     pub stream_url: Option<super::OrmUrl>,
     /// The number of this track
     pub track_number: Option<i64>,

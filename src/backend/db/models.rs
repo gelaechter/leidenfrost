@@ -21,7 +21,7 @@ pub use genre::Model as Genre;
 pub use playlist::Model as Playlist;
 pub use track::Model as Track;
 
-/// A url::Url wrapper that plays nice with SeaORM
+/// A [`url::Url`] wrapper that plays nice with SeaORM
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, FromJsonQueryResult)]
 #[repr(transparent)]
 pub struct OrmUrl(url::Url);
@@ -49,5 +49,11 @@ impl From<url::Url> for OrmUrl {
 impl From<OrmUrl> for url::Url {
     fn from(value: OrmUrl) -> Self {
         value.0
+    }
+}
+
+impl<'a> From<&'a OrmUrl> for &'a url::Url {
+    fn from(value: &'a OrmUrl) -> Self {
+        &value.0
     }
 }

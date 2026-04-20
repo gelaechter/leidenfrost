@@ -1,22 +1,15 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use iced::{
-    Alignment::Center,
-    Border, Color, Element, Font,
-    Length::{Fill, FillPortion, Shrink},
-    Padding, Task, Theme, font,
-    widget::{
-        self,
-        button::{self, Status},
-        column,
-        pane_grid::{self, Axis, Configuration},
-        row, sensor, space,
-        text::{self, Wrapping},
-    },
+    Alignment::Center, Border, Color, Element, Font, Length::{Fill, FillPortion, Shrink}, Padding, Task, Theme, font, widget::{
+        self, button::{self, Status}, column, container, pane_grid::{self, Axis, Configuration}, row, sensor, space, text::{self, Wrapping}
+    }
 };
 use iced_fonts::lucide;
 use url::Url;
-use uuid::Uuid;
 
 use crate::{
     backend::{
@@ -25,7 +18,6 @@ use crate::{
             jellyfin::api::JellyfinApi,
         },
         data_view::{RelatedArtist, RelatedGenre, TrackView},
-        db::models::Track,
     },
     ui::{
         components::{
@@ -47,7 +39,7 @@ pub struct Tracks {
     track_visibility: HashMap<String, bool>,
     table_header: pane_grid::State<TableColumns>,
     header_width: HashMap<TableColumns, f32>,
-    images: HashMap<Uuid, Image>,
+    images: image::Manager,
 }
 
 impl Default for Tracks {
@@ -113,7 +105,7 @@ pub enum Message {
     /// A table column has been reordered
     PaneReordered(pane_grid::DragEvent),
     /// A driver for images
-    ImageDriver(Uuid, image::Message),
+    ImageDriver(image::Message),
     /// The route has been changed (e.g. through clicking an album)
     ChangeRoute(Route),
     Play,
@@ -187,24 +179,18 @@ impl Tracks {
             }
             Message::TracksFetched(tracks) => {
                 // Create images from tracks
-                for v in tracks.iter().filter(|v| v.track.image_url.is_some()) {
-                    let url = v.track.image_url.clone().unwrap();
-                    let (id, image) = Image::new(url.into(), v.track.image_blur_hash.clone());
-                    self.images.insert(id, image);
-                }
+                self.images.insert(tracks.iter().filter_map(|view| {
+                    let url = view.track.image_url.clone();
+                    let blurhash = view.track.image_blur_hash.clone();
+                    url.map(|url| Image::new(url).blurhash_maybe(blurhash))
+                }));
                 // Insert tracks
                 self.tracks = tracks;
 
                 Task::none()
             }
-            Message::ImageDriver(url, m) => {
-                if let Some(image) = self.images.get_mut(&url) {
-                    image.update(m).map(move |m| Message::ImageDriver(url, m))
-                } else {
-                    Task::none()
-                }
-            }
-            // Only bubbles up
+            Message::ImageDriver(m) => self.images.update(m).map(Message::ImageDriver),
+            // Only bubbles to the router component
             Message::ChangeRoute(_) => Task::none(),
             Message::TrackShown(id) => {
                 self.track_visibility.insert(id, true);
@@ -239,7 +225,7 @@ impl Tracks {
 
     pub fn table_header(&self) -> Element<'_, Message> {
         let pane_grid = widget::pane_grid(&self.table_header, |pane, state, is_maximized| {
-            pane_grid::Content::new({
+            let content = pane_grid::TitleBar::new({
                 let container = match state {
                     TableColumns::Number => widget::container("#").center_x(Fill),
                     TableColumns::CombinedTitle => widget::container("TITLE"),
@@ -249,12 +235,14 @@ impl Tracks {
                     TableColumns::Album => widget::container("ALBUM"),
                     TableColumns::Genre => widget::container("GENRE"),
                 }
-                .center_y(Fill);
+                .center_y(Fill).style(|theme: &Theme | container::background(theme.palette().background.weak.color));
 
                 sensor(container)
                     .on_show(|size| Message::ColumnResized(state.clone(), size.width))
                     .on_resize(|size| Message::ColumnResized(state.clone(), size.width))
-            })
+            });
+
+            pane_grid::Content::new(space()).title_bar(content)
         })
         .on_resize(8, Message::PaneResized)
         .on_drag(Message::PaneReordered);
@@ -262,31 +250,29 @@ impl Tracks {
         widget::container(pane_grid).width(Fill).height(40).into()
     }
 
-    pub fn combined_title(&self, v: &TrackView) -> Element<'_, Message> {
-        let TrackView {
-            track: Track {
-                image_url, title, ..
-            },
-            artists,
-            ..
-        } = v;
+    pub fn combined_title(&self, view: &TrackView) -> Element<'_, Message> {
+        let image_url = view.track.image_url.as_ref();
+        let track_title = view.track.title.clone().unwrap_or("No title".to_owned());
+        let artists = view.artists.clone();
 
-        let image = if let Some(image_id) = image_url.as_ref().map(|u| Image::uuid(u))
-            && let Some(image) = self.images.get(&image_id)
+        // Image
+        let image = if let Some(image_url) = image_url
+            && let Some(image) = self.images.view(image_url)
         {
             // Show an image if it's ready
-            image.view().map(move |m| Message::ImageDriver(image_id, m))
+            image.map(Message::ImageDriver)
         } else {
             // Or show a placeholder
             lucide::disc_album().size(18).into()
         };
 
-        let title = widget::text(title.clone().unwrap_or("No title".to_owned()))
+        // Title
+        let title = widget::text(track_title)
             .wrapping(Wrapping::None)
             .ellipsis(text::Ellipsis::End);
 
+        // Artist list (comma separated)
         let artist_text = artists
-            .clone()
             .into_links(
                 |RelatedArtist { id, name }| {
                     (
@@ -321,6 +307,7 @@ impl Tracks {
 
             widget::sensor(content)
                 .anticipate(ANTICIPATED_CELLS * CELL_HEIGHT) // Anticipate cells
+                .delay(Duration::from_millis(5))
                 .on_show(|_| Message::TrackShown(view.track.id.clone()))
                 .on_hide(Message::TrackHidden(view.track.id.clone()))
                 .into()
