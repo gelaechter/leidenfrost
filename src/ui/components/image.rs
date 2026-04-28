@@ -1,4 +1,3 @@
-use core::panic;
 use iced::{
     ContentFit, Element,
     Length::Fill,
@@ -10,7 +9,6 @@ use iced::{
     },
 };
 use iced_fonts::lucide;
-use sea_orm::ExprTrait;
 use serde::Deserialize;
 use serde_json::json;
 use std::{
@@ -19,7 +17,6 @@ use std::{
     hash::Hash,
     io,
     sync::{Arc, LazyLock},
-    vec::IntoIter,
 };
 use url::Url;
 use uuid::Uuid;
@@ -96,9 +93,9 @@ pub struct Image {
     size: Size<u32>,
     /// The images blur hash (if any)
     blurhash: Option<String>,
-    // TODO: store a proper state with error handling
     /// An image resizer if the endpoint supports auto sizing
     image_resizer: Option<Endpoint>,
+    // TODO: store a proper state with error handling
     /// The currently allocated image data (if any)
     status: Option<image::Handle>,
     /// Any running download task
@@ -108,7 +105,7 @@ pub struct Image {
 }
 
 #[derive(Debug, Clone)]
-enum IMessage {
+pub enum IMessage {
     Hidden,
     /// The image has become visible
     Shown(Size),
@@ -142,7 +139,7 @@ impl Image {
         self
     }
 
-    fn view(&self) -> Element<'_, IMessage> {
+    pub fn view<'a>(&'a self) -> Element<'a, IMessage> {
         let image: Element<'_, IMessage> = if let Some(handle) = &self.status {
             // Either the blurhash or the image have been loaded
             widget::image(handle)
@@ -170,7 +167,7 @@ impl Image {
             .into()
     }
 
-    fn update(&mut self, message: IMessage) -> Task<IMessage> {
+    pub fn update(&mut self, message: IMessage) -> Task<IMessage> {
         match message {
             // Once the image is shown / size is changed
             IMessage::Shown(size) => {
@@ -282,9 +279,9 @@ impl Image {
             Task::future(Self::download(url.clone(), *size, image_resizer.clone()))
                 .and_then(|bytes| {
                     // After downloading directly allocate the image so we only start overwriting the
-                    // blurhashes once the image is fully allocated, this way we get a guarantee that the
-                    // image is actually drawn once we replace the blurhash instead of being deferred to the
-                    // renderer
+                    // Blurhashes once the image is fully allocated. This way we get a guarantee that the
+                    // image is actually drawn once we replace the Blurhash instead of being deferred to the
+                    // renderer.
                     //
                     // > When you obtain an Allocation explicitly, you get the guarantee that using a Handle
                     // > will draw the corresponding image immediately in the next frame.

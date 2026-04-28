@@ -1,13 +1,12 @@
-use std::{
-    collections::{HashMap, HashSet},
-    time::Duration,
-};
+use std::time::Duration;
 
 use iced::{
     Color, Element, Event,
     Length::{Fill, Shrink},
-    Padding, Point, Subscription, Task, Theme, alignment, event,
-    mouse::{self, Event},
+    Padding, Point, Subscription, Task, Theme,
+    advanced::graphics::futures::MaybeSend,
+    alignment, event,
+    mouse::{self},
     widget::{
         self,
         button::{self, Status, Style},
@@ -19,30 +18,45 @@ use uuid::Uuid;
 
 #[repr(transparent)]
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+struct ColId(Uuid);
+
+#[repr(transparent)]
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 struct RowId(Uuid);
 
-/// A dynamic table component
-pub struct Table<'a, T, Message> {
-    /// Whatever we are showing
-    rows: HashMap<RowId, T>,
-    /// Rows have been selected in the table
-    selected_rows: HashSet<RowId>,
-    /// Rows that are currently visible in the table
-    row_visibility: HashMap<RowId, bool>,
-    /// The columns identified each by a ColumnId
-    columns: Vec<Column<'a, T, Message>>,
+/// A table component
+pub struct Table<T, M> {
+    /// The table rows
+    /// These act as state, meaning every cell in a row shares one state
+    rows: Vec<Row<T>>,
+    /// The table columns
+    /// These dictate view, they define multiple ways to draw the state (the rows)
+    columns: Vec<Column<T, M>>,
     /// A split that the user is currently hovering over
     hovered_split: Option<(usize, Point)>,
     /// A split that the user is currently grabbing
     grabbed_split: Option<(usize, Point)>,
 }
 
-impl<'a, T, Message> Default for Table<'a, T, Message> {
+pub struct TableBuilder<T, M> {
+    table: Table<T, M>,
+}
+
+impl<T, M> TableBuilder<T, M> {
+    pub fn column(mut self, column: Column<T, M>) -> Self {
+        self.table.columns.push(column);
+        self
+    }
+
+    pub fn build(self) -> Table<T, M> {
+        self.table
+    }
+}
+
+impl<T, M> Default for Table<T, M> {
     fn default() -> Self {
         Self {
             rows: Default::default(),
-            selected_rows: Default::default(),
-            row_visibility: Default::default(),
             columns: Default::default(),
             hovered_split: Default::default(),
             grabbed_split: Default::default(),
@@ -50,24 +64,49 @@ impl<'a, T, Message> Default for Table<'a, T, Message> {
     }
 }
 
-impl<'a, T, Message> Table<'a, T, Message> {
-    pub fn rows(mut self, rows: Vec<T>) -> Self {
-        let rows = rows.into_iter().map(|t| (RowId(Uuid::new_v4()), t));
-        self.rows.extend(rows);
-        self
+impl<T, M> Table<T, M> {
+    pub const fn is_empty(&self) -> bool {
+        self.rows.is_empty()
     }
 
-    pub fn column(mut self, column: Column<'a, T, Message>) -> Self {
+    pub fn extend_rows(&mut self, rows: Vec<T>) {
+        let rows: Vec<Row<T>> = rows.into_iter().map(Row::new).collect();
+        self.rows.extend(rows);
+    }
+
+    pub fn column(mut self, column: Column<T, M>) -> Self {
         self.columns.push(column);
         self
     }
 }
 
-pub struct Column<'a, T, Message> {
-    /// A function that returns the content of the header
-    header: Box<dyn Fn() -> Element<'a, Message> + 'a>,
+pub struct Row<T> {
+    id: RowId,
+    item: T,
+    visible: bool,
+    selected: bool,
+}
+
+impl<T> Row<T> {
+    pub fn new(item: T) -> Self {
+        Row {
+            item,
+            visible: false,
+            selected: false,
+            id: RowId(Uuid::new_v4()),
+        }
+    }
+}
+
+pub struct Column<T, M> {
+    id: ColId,
+    /// The header for the column
+    /// While this can be any element it cannot mutate state
+    /// this is somewhat a given since an element is just a view
+    header: Box<dyn for<'a> Fn() -> Element<'static, M> + 'static>,
     /// A function that returns the content of a column for the given data
-    view: Box<dyn Fn(&T) -> Element<'a, Message> + 'a>,
+    view: Box<dyn for<'a> Fn(&'a T) -> Element<'a, M> + 'static>,
+    update: Box<dyn Fn(&mut T, M) -> Task<M> + 'static>,
     /// How this columns contents are aligned on the x axis
     align_x: alignment::Horizontal,
     /// How this columns contents are aligned on the y axis
@@ -80,14 +119,24 @@ pub struct Column<'a, T, Message> {
     width: f32,
 }
 
-impl<'a, T, Message> Column<'a, T, Message> {
+impl<T, M> Column<T, M> {
     pub fn new(
-        header: impl Fn() -> Element<'a, Message> + 'a,
-        view: impl Fn(&T) -> Element<'a, Message> + 'a,
-    ) -> Column<'a, T, Message> {
+        header: impl Fn() -> Element<'static, M> + 'static,
+        view: impl for<'a> Fn(&'a T) -> Element<'a, M> + 'static,
+    ) -> Column<T, M> {
+        Self::with_update(header, view, |_t, _m| Task::none())
+    }
+
+    pub fn with_update(
+        header: impl Fn() -> Element<'static, M> + 'static,
+        view: impl for<'a> Fn(&'a T) -> Element<'a, M> + 'static,
+        update: impl Fn(&mut T, M) -> Task<M> + 'static,
+    ) -> Column<T, M> {
         Column {
+            id: ColId(Uuid::new_v4()),
             header: Box::new(header),
             view: Box::new(view),
+            update: Box::new(update),
             align_x: alignment::Horizontal::Left,
             align_y: alignment::Vertical::Center,
             pref_rel_width: 1,
@@ -95,20 +144,30 @@ impl<'a, T, Message> Column<'a, T, Message> {
             width: 300.0,
         }
     }
+
+    pub fn align_x(mut self, alignment: alignment::Horizontal) -> Self {
+        self.align_x = alignment;
+        self
+    }
+
+    pub fn align_y(mut self, alignment: alignment::Vertical) -> Self {
+        self.align_y = alignment;
+        self
+    }
 }
 
-#[derive(Clone, Debug)]
-pub enum Message<M>
-where
-    M: Clone + std::fmt::Debug,
-{
-    RowShown(RowId),
-    RowHidden(RowId),
+#[derive(Debug, Clone)]
+pub enum Message<M: Clone> {
+    RowShown(usize),
+    RowHidden(usize),
     ColumnResized(usize, f32),
     HeaderPress(usize),
     HeaderRelease,
     HeaderMove(Point),
     EventOccurred(Event),
+    ColumnDriver(RowId, ColId, M),
+    /// None message meant to consume the header element view
+    None,
 }
 
 /// The height one cell of the track table has
@@ -116,11 +175,10 @@ const CELL_HEIGHT: u32 = 64;
 /// How many items should be anticipated by the sensor
 const ANTICIPATED_CELLS: u32 = 0;
 
-impl
-
-impl<'a, T, M> Table<'a, T, M>
+impl<T, M> Table<T, M>
 where
-    M: Clone + std::fmt::Debug + 'a,
+    T: std::fmt::Debug + Clone + 'static,
+    M: std::fmt::Debug + Clone + MaybeSend + 'static,
 {
     pub fn view(&self) -> Element<'_, Message<M>> {
         widget::column![
@@ -134,12 +192,12 @@ where
 
     pub fn update(&mut self, message: Message<M>) -> Task<Message<M>> {
         match message {
-            Message::RowShown(row_id) => {
-                self.row_visibility.insert(row_id, true);
+            Message::RowShown(row_idx) => {
+                self.rows[row_idx].visible = true;
                 Task::none()
             }
-            Message::RowHidden(row_id) => {
-                self.row_visibility.insert(row_id, false);
+            Message::RowHidden(row_idx) => {
+                self.rows[row_idx].visible = false;
                 Task::none()
             }
             // Update column size
@@ -167,7 +225,6 @@ where
                 }
                 Task::none()
             }
-            Message::ColMessage(_) => Task::none(),
             Message::EventOccurred(Event::Mouse(e)) => match e {
                 mouse::Event::CursorEntered => todo!(),
                 mouse::Event::CursorLeft => todo!(),
@@ -177,6 +234,20 @@ where
                 mouse::Event::WheelScrolled { delta } => todo!(),
             },
             Message::EventOccurred(_) => Task::none(),
+            Message::ColumnDriver(row_id, col_id, message) => {
+                let row = self.rows.iter_mut().find(|r| r.id == row_id);
+                let col = self.columns.iter_mut().find(|c| c.id == col_id);
+
+                if let Some(row) = row
+                    && let Some(col) = col
+                {
+                    (col.update)(&mut row.item, message)
+                        .map(move |m| Message::ColumnDriver(row_id, col_id, m))
+                } else {
+                    Task::none()
+                }
+            }
+            Message::None => Task::none(),
         }
     }
 
@@ -195,14 +266,13 @@ where
     }
 
     pub fn table_header(&self) -> Element<'_, Message<M>> {
-        let mut count = 0;
         let headers = self
             .columns
             .iter()
             .enumerate()
             .map(|(idx, col)| {
                 // Header container
-                widget::container((col.header)().map(Message::ColMessage))
+                widget::container((col.header)().map(|_m| Message::None))
                     .padding(Padding::new(0.0).horizontal(8))
                     .style(container::bordered_box)
                     .height(Fill)
@@ -234,19 +304,19 @@ where
     }
 
     pub fn sliding_window(&self) -> Element<'_, Message<M>> {
-        let rows = self.rows.iter().map(|(id, item)| {
-            let content = match self.row_visibility.get(id) {
+        let rows = self.rows.iter().enumerate().map(|(idx, row)| {
+            let content = match row.visible {
                 // Produces a table segment if the chunk is visible the chunk
-                Some(visible) if *visible => self.item_row(item),
+                true => self.item_row(&row),
                 // Produce a cheap placeholder otherwise
-                _ => widget::space().width(Fill).height(CELL_HEIGHT).into(),
+                false => widget::space().width(Fill).height(CELL_HEIGHT).into(),
             };
 
             widget::sensor(content)
                 .anticipate(ANTICIPATED_CELLS * CELL_HEIGHT) // Anticipate cells
                 .delay(Duration::from_millis(10))
-                .on_show(|_| Message::RowShown(*id))
-                .on_hide(Message::RowHidden(*id))
+                .on_show(move |_| Message::RowShown(idx))
+                .on_hide(Message::RowHidden(idx))
                 .into()
         });
 
@@ -256,15 +326,20 @@ where
     }
 
     /// One row representing the
-    pub fn item_row(&self, item: &T) -> Element<'_, Message<M>> {
-        let views = self.columns.iter().map(|col| {
-            widget::container((col.view)(item).map(Message::ColMessage))
-                .width(col.width)
-                .clip(true)
-                .height(CELL_HEIGHT)
-                .align_x(col.align_x)
-                .align_y(col.align_y)
-                .into()
+    pub fn item_row<'a>(&self, row: &'a Row<T>) -> Element<'a, Message<M>> {
+        let row_id = row.id.clone();
+        let views = self.columns.iter().map(move |col| {
+            let col_id = col.id.clone();
+            widget::container(
+                (col.view)(&row.item)
+                    .map(move |m| Message::ColumnDriver(row_id.clone(), col_id.clone(), m)),
+            )
+            .width(col.width)
+            .clip(true)
+            .height(CELL_HEIGHT)
+            .align_x(col.align_x)
+            .align_y(col.align_y)
+            .into()
         });
 
         // let selected = self.selected_rows.contains(&view.track.id);
