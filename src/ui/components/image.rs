@@ -17,6 +17,7 @@ use std::{
     hash::Hash,
     io,
     sync::{Arc, LazyLock},
+    time::Duration,
 };
 use url::Url;
 use uuid::Uuid;
@@ -91,13 +92,16 @@ pub struct Image {
     url: Url,
     /// The last max size of the image
     size: Size<u32>,
+    /// When the image has become visible
+    /// We use this to debounce the visibility
+    debounce: Option<Duration>,
     /// The images blur hash (if any)
     blurhash: Option<String>,
     /// An image resizer if the endpoint supports auto sizing
     image_resizer: Option<Endpoint>,
     // TODO: store a proper state with error handling
     /// The currently allocated image data (if any)
-    status: Option<image::Handle>,
+    status: Option<Content>,
     /// Any running download task
     _download_task: Option<task::Handle>,
     /// Any running blurhash decoding task
@@ -112,7 +116,16 @@ pub enum IMessage {
     /// The image was resized
     Resized(Size),
     /// Message that the image has been downloaded and allocated
+    BlurhashDecoded(Result<image::Handle, Error>),
+    /// Message that the image has been downloaded and allocated
     Downloaded(Result<image::Handle, Error>),
+}
+
+#[derive(Debug, Clone)]
+pub enum Content {
+    Blurhash(image::Handle),
+    Full(image::Handle),
+    Error,
 }
 
 impl Image {
@@ -122,43 +135,77 @@ impl Image {
             url: url.into(),
             blurhash: None,
             image_resizer: None,
-            size: Size::default(),
+            size: Size {
+                width: 16,
+                height: 16,
+            },
             status: None,
+            debounce: None,
             _download_task: None,
             _blurhash_task: None,
         }
     }
 
+    /// Adds an optional blurhash to the image
     pub fn blurhash_maybe(mut self, blurhash: Option<String>) -> Self {
         self.blurhash = blurhash;
         self
     }
 
+    /// Activates automatic sizing 
     pub fn autosized(mut self, endpoint: Endpoint) -> Self {
         self.image_resizer = Some(endpoint);
         self
     }
 
+    /// Decodes the blurhash (if any) beforehand
+    /// This is a blocking operation and should be treated as such
+    pub fn pre_decode_blurhash(mut self, width: u32, height: u32) -> Self {
+        if let Some(blurhash) = &self.blurhash
+            && let Ok(pixels) = blurhash::decode(blurhash, width, height, 1.0)
+        {
+            let handle = image::Handle::from_rgba(width, height, pixels);
+            self.status = Some(Content::Blurhash(handle))
+        }
+        self
+    }
+
+    /// Debounces the visibility of the image
+    /// 
+    /// This can be used together with [`Image::pre_decode_blurhash`] to immediately
+    /// show a blurhash but only start fetching the actual image once it has been
+    /// visible for a certain amount of time.
+    pub fn debounce(mut self, duration: Duration) -> Self {
+        self.debounce = Some(duration);
+        self
+    }
+
+
     pub fn view<'a>(&'a self) -> Element<'a, IMessage> {
-        let image: Element<'_, IMessage> = if let Some(handle) = &self.status {
-            // Either the blurhash or the image have been loaded
-            widget::image(handle)
-                // Use width an height instead of expand to enforce full size and prevent resizing
-                .width(Fill)
-                .height(Fill)
-                .content_fit(ContentFit::Cover)
-                .border_radius(8)
-                .into()
-        } else {
-            // No blurhash / image
-            // TODO: replace this with a loading symbol if we are currently loading the image
-            lucide::image_off().size(16).into()
+        let image: Element<'_, IMessage> = match &self.status {
+            Some(Content::Blurhash(handle)) | Some(Content::Full(handle)) => {
+                // Either the blurhash or the image have been loaded
+                widget::image(handle)
+                    // Use width an height instead of expand to enforce full size and prevent resizing
+                    .width(Fill)
+                    .height(Fill)
+                    .content_fit(ContentFit::Cover)
+                    .border_radius(8)
+                    .into()
+            }
+            Some(Content::Error) => lucide::image_off().size(16).into(),
+            None => lucide::image_down().into(),
         };
 
-        let sensor = widget::sensor(image)
+        let mut sensor = widget::sensor(image)
             .on_resize(IMessage::Resized)
             .on_show(IMessage::Shown)
             .on_hide(IMessage::Hidden);
+
+        // Set an optional delay to debounce
+        if let Some(delay) = self.debounce {
+            sensor = sensor.delay(delay)
+        }
 
         widget::container(sensor)
             .style(container::rounded_box)
@@ -171,52 +218,71 @@ impl Image {
         match message {
             // Once the image is shown / size is changed
             IMessage::Shown(size) => {
+                // Determine initial size
                 let size = Size {
                     width: size.width.round() as u32,
                     height: size.height.round() as u32,
                 };
-
-                self.size = size;
-
-                // Abort if we're already working
-                if self._download_task.is_some() || self.status.is_some() {
+                if size.width < 1 || size.height < 1 {
                     return Task::none();
-                };
+                }
 
-                match &self.blurhash {
-                    // Either just download
+                match self.status {
+                    // No image and Blurhash exists
+                    None if self.blurhash.is_some() => {
+                        Task::batch([self.blurhash_task(), self.download_task()])
+                    }
+                    // No image and no blurhash
                     None => self.download_task(),
-                    // Or download and decode blurhash
-                    Some(_) => Task::batch([self.blurhash_task(), self.download_task()]),
+                    // Blurhash rendered
+                    Some(Content::Blurhash(_)) => self.download_task(),
+                    // Do nothing if image already loaded or errored
+                    Some(Content::Full(_)) | Some(Content::Error) => Task::none(),
                 }
             }
             IMessage::Hidden => {
-                // if let Some(download_task) = &self._download_task.take() {
-                //     download_task.abort();
-                // };
+                if let Some(download_task) = &self._download_task.take() {
+                    download_task.abort();
+                };
                 Task::none()
             }
             IMessage::Resized(size) => {
-                // If autosizing is active and the new resolution has greater dimensions
+                // If auto sizing is active and the new resolution has greater dimensions
                 // then redownload the new resolution
                 if self.image_resizer.is_some()
                     && size.width > self.size.width as f32
                     && size.height > self.size.height as f32
                 {
-                    Task::done(IMessage::Shown(size))
+                    match &self.blurhash {
+                        // Either just download
+                        None => self.download_task(),
+                        // Or download and decode blurhash
+                        Some(_) => Task::batch([self.blurhash_task(), self.download_task()]),
+                    }
                 } else {
                     Task::none()
                 }
             }
+            IMessage::BlurhashDecoded(handle) => {
+                if let Ok(handle) = handle {
+                    self.status = Some(Content::Blurhash(handle));
+                } else {
+                    self.status = Some(Content::Error)
+                }
+                self._blurhash_task.take();
+                Task::none()
+            }
             IMessage::Downloaded(handle) => {
                 if let Ok(handle) = handle {
-                    self.status = Some(handle);
+                    self.status = Some(Content::Full(handle));
                     // Download has concluded so abort blurhash decoding
                     if let Some(blurhash_task) = &self._blurhash_task.take() {
                         blurhash_task.abort();
                     }
+                } else {
+                    self.status = Some(Content::Error)
                 }
-                // TODO: Error handling
+                self._download_task.take();
 
                 Task::none()
             }
@@ -333,7 +399,7 @@ impl Image {
                 image::Handle::from_rgba(width, height, pixels),
             ))
         })
-        .map(IMessage::Downloaded)
+        .map(IMessage::BlurhashDecoded)
         .abortable();
 
         // Set blurhash handle and return value

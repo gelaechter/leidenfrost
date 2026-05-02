@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use iced::{
     Alignment::Center,
     Border, Element, Font,
@@ -53,16 +55,36 @@ pub enum Message {
     /// Initial track fetching
     FetchTracks,
     /// The tracks have been fetched
-    TracksFetched(Vec<TrackView>),
+    RowsCreated(Vec<RowData>),
     /// A driver for the table
     TableDriver(table::Message<CellMessage>),
     Play,
 }
 
 #[derive(Debug, Clone)]
-pub struct RowData {
+struct RowData {
     view: TrackView,
     image: Option<Image>,
+}
+
+impl From<TrackView> for RowData {
+    /// This conversion is blocking since we decode the blurhashes
+    /// beforehand; Treat it as such
+    fn from(track_view: TrackView) -> Self {
+        // Create an image if available
+        let image = track_view.track.image_url.clone().map(|url| {
+            let blurhash = track_view.track.image_blur_hash.clone();
+            Image::new(url)
+                .blurhash_maybe(blurhash)
+                .pre_decode_blurhash(64, 64)
+                .debounce(Duration::from_millis(500))
+        });
+
+        RowData {
+            view: track_view,
+            image,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -116,44 +138,37 @@ impl Tracks {
                     return Task::none();
                 }
 
-                Task::perform(
-                    async {
-                        // TODO: Replace with global state
-                        let jf = JellyfinApi::auth_user_password(
-                            Url::parse("http://***REMOVED***").unwrap(),
-                            "***REMOVED***".to_string(),
-                            "***REMOVED***".to_string(),
-                        )
-                        .await;
+                Task::future(async {
+                    // TODO: Replace with global state
+                    let jf = JellyfinApi::auth_user_password(
+                        Url::parse("http://***REMOVED***").unwrap(),
+                        "***REMOVED***".to_string(),
+                        "***REMOVED***".to_string(),
+                    )
+                    .await;
 
-                        jf.get_tracks().await.unwrap()
-                    },
-                    Message::TracksFetched,
-                )
+                    jf.get_tracks().await.unwrap()
+                })
+                .then(|tracks| {
+                    // After fetching convert the track_views into rowdata
+                    Task::perform(
+                        async {
+                            // [`Into::into`]
+                            tokio::task::spawn_blocking(move || {
+                                tracks.into_iter().map(RowData::from).collect()
+                            })
+                            .await
+                            .unwrap()
+                        },
+                        Message::RowsCreated,
+                    )
+                })
             }
-            Message::TracksFetched(tracks) => {
-                let row_data = tracks
-                    .into_iter()
-                    .map(|track_view| {
-                        // Create an image if available
-                        let image = track_view.track.image_url.clone().map(|url| {
-                            let blurhash = track_view.track.image_blur_hash.clone();
-                            Image::new(url).blurhash_maybe(blurhash)
-                        });
-
-                        RowData {
-                            view: track_view,
-                            image,
-                        }
-                    })
-                    .collect();
-
+            Message::RowsCreated(row_data) => {
                 // Insert tracks
                 self.track_table.extend_rows(row_data);
-
                 Task::none()
             }
-            // Message::ImageDriver(m) => self.images.update(m).map(Message::ImageDriver),
             Message::TableDriver(m) => self.track_table.update(m).map(Message::TableDriver),
             // Only bubbles to the router component
             // Message::ChangeRoute(_) => Task::none(),
@@ -162,15 +177,30 @@ impl Tracks {
     }
 
     /// One row representing the
-    pub fn track_table() -> Table<RowData, CellMessage> {
+    fn track_table() -> Table<RowData, CellMessage> {
         // Index column
         let index_col = Column::new(
             || widget::text("#").into(),
             move |row_data: &RowData| widget::text("0").into(),
-        );
+        )
+        .align_x(Horizontal::Center);
 
-        let title_col = Column::new(|| widget::text("Name").into(), Self::combined_title)
-            .align_x(Horizontal::Center);
+        // Combined title column
+        let title_col = Column::new(|| widget::text("Name").into(), Self::combined_title).update(
+            |row_data, message| {
+                // We need to drive the image
+                if let CellMessage::ImageDriver(m) = message {
+                    row_data
+                        .image
+                        .as_mut()
+                        .unwrap()
+                        .update(m)
+                        .map(CellMessage::ImageDriver)
+                } else {
+                    Task::none()
+                }
+            },
+        );
 
         // Album column
         let album_col = Column::new(

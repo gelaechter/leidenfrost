@@ -38,21 +38,7 @@ pub struct Table<T, M> {
     grabbed_split: Option<(usize, Point)>,
 }
 
-pub struct TableBuilder<T, M> {
-    table: Table<T, M>,
-}
-
-impl<T, M> TableBuilder<T, M> {
-    pub fn column(mut self, column: Column<T, M>) -> Self {
-        self.table.columns.push(column);
-        self
-    }
-
-    pub fn build(self) -> Table<T, M> {
-        self.table
-    }
-}
-
+// Deriving default doesn't work
 impl<T, M> Default for Table<T, M> {
     fn default() -> Self {
         Self {
@@ -124,25 +110,22 @@ impl<T, M> Column<T, M> {
         header: impl Fn() -> Element<'static, M> + 'static,
         view: impl for<'a> Fn(&'a T) -> Element<'a, M> + 'static,
     ) -> Column<T, M> {
-        Self::with_update(header, view, |_t, _m| Task::none())
-    }
-
-    pub fn with_update(
-        header: impl Fn() -> Element<'static, M> + 'static,
-        view: impl for<'a> Fn(&'a T) -> Element<'a, M> + 'static,
-        update: impl Fn(&mut T, M) -> Task<M> + 'static,
-    ) -> Column<T, M> {
         Column {
             id: ColId(Uuid::new_v4()),
             header: Box::new(header),
             view: Box::new(view),
-            update: Box::new(update),
+            update: Box::new(|_t, _m| Task::none()),
             align_x: alignment::Horizontal::Left,
             align_y: alignment::Vertical::Center,
             pref_rel_width: 1,
             min_abs_width: 64.0,
             width: 300.0,
         }
+    }
+
+    pub fn update(mut self, update: impl Fn(&mut T, M) -> Task<M> + 'static) -> Column<T, M> {
+        self.update = Box::new(update);
+        self
     }
 
     pub fn align_x(mut self, alignment: alignment::Horizontal) -> Self {
@@ -171,9 +154,9 @@ pub enum Message<M: Clone> {
 }
 
 /// The height one cell of the track table has
-const CELL_HEIGHT: u32 = 64;
+const ROW_HEIGHT: u32 = 64;
 /// How many items should be anticipated by the sensor
-const ANTICIPATED_CELLS: u32 = 0;
+const ANTICIPATED_CELLS: u32 = 2;
 
 impl<T, M> Table<T, M>
 where
@@ -234,6 +217,7 @@ where
                 mouse::Event::WheelScrolled { delta } => todo!(),
             },
             Message::EventOccurred(_) => Task::none(),
+
             Message::ColumnDriver(row_id, col_id, message) => {
                 let row = self.rows.iter_mut().find(|r| r.id == row_id);
                 let col = self.columns.iter_mut().find(|c| c.id == col_id);
@@ -304,61 +288,68 @@ where
     }
 
     pub fn sliding_window(&self) -> Element<'_, Message<M>> {
-        let rows = self.rows.iter().enumerate().map(|(idx, row)| {
-            let content = match row.visible {
-                // Produces a table segment if the chunk is visible the chunk
-                true => self.item_row(&row),
+        // Split the rows into chunks of size CHUNK_ROWS
+        let rows = self.rows.iter().enumerate().map(|(row_idx, row)| {
+            // Check if the chunk is visible
+            let content: Element<'_, Message<M>> = match row.visible {
+                // Produce a table segment if the chunk is visible
+                true => self.item_row(row),
                 // Produce a cheap placeholder otherwise
-                false => widget::space().width(Fill).height(CELL_HEIGHT).into(),
+                false => widget::space().width(Fill).height(ROW_HEIGHT).into(),
             };
 
-            widget::sensor(content)
-                .anticipate(ANTICIPATED_CELLS * CELL_HEIGHT) // Anticipate cells
-                .delay(Duration::from_millis(10))
-                .on_show(move |_| Message::RowShown(idx))
-                .on_hide(Message::RowHidden(idx))
-                .into()
+            // Wrap the chunk with a sensor to watch if it's visible
+            let content = widget::sensor(content)
+                .key(row_idx)
+                .anticipate(ANTICIPATED_CELLS * ROW_HEIGHT) // Anticipate cells
+                // .delay(Duration::from_millis(1))
+                .on_show(move |_| Message::RowShown(row_idx))
+                .on_hide(Message::RowHidden(row_idx))
+                .into();
+
+            (row_idx, content)
         });
 
-        widget::scrollable(widget::column(rows))
+        widget::scrollable(widget::keyed_column(rows))
             .height(Shrink)
             .into()
     }
 
-    /// One row representing the
+    /// A row showing all the columns for an item T
     pub fn item_row<'a>(&self, row: &'a Row<T>) -> Element<'a, Message<M>> {
-        let row_id = row.id.clone();
-        let views = self.columns.iter().map(move |col| {
-            let col_id = col.id.clone();
-            widget::container(
-                (col.view)(&row.item)
-                    .map(move |m| Message::ColumnDriver(row_id.clone(), col_id.clone(), m)),
-            )
+        let columns = self.columns.iter().map(move |col| {
+            widget::container((col.view)(&row.item).map({
+                let row_id = row.id;
+                let col_id = col.id;
+                move |m| Message::ColumnDriver(row_id, col_id, m)
+            }))
             .width(col.width)
             .clip(true)
-            .height(CELL_HEIGHT)
+            .height(ROW_HEIGHT)
             .align_x(col.align_x)
             .align_y(col.align_y)
             .into()
         });
 
-        // let selected = self.selected_rows.contains(&view.track.id);
-        let selected = false; // TODO: see above
-        widget::button(widget::row(views).width(Fill))
-            .style(move |theme: &Theme, status| {
-                button::Style::default().with_background(match selected {
-                    // Selected
-                    true => theme.palette().background.neutral.color,
-                    // Hovered
-                    false if matches!(status, Status::Hovered) => {
-                        theme.palette().background.weak.color
-                    }
-                    // Neither
-                    false => Color::TRANSPARENT,
-                })
+        widget::button(widget::row(columns).width(Fill))
+            .style({
+                let selected = row.selected;
+                move |theme: &Theme, status| {
+                    button::Style::default().with_background(match selected {
+                        // Selected
+                        true => theme.palette().background.neutral.color,
+                        // Hovered
+                        false if matches!(status, Status::Hovered) => {
+                            theme.palette().primary.weak.color
+                        }
+                        // Neither
+                        false => Color::TRANSPARENT,
+                    })
+                }
             })
-            .padding(Padding::new(0.0).vertical(2))
-            // .on_press(Message::TrackClicked(view.track.id.clone())) TODO:
+            .height(ROW_HEIGHT)
+            // .padding(Padding::new(0.0).vertical(2))
+            // .on_press(Message::TrackClicked(view.track.id.clone()))
             .width(Fill)
             .into()
     }

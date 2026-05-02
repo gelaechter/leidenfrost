@@ -5,13 +5,13 @@ edition = "2024"
 
 [dependencies]
 futures = "0.3.32"
-iced = { git = "https://github.com/iced-rs/iced.git", rev= "d1dd372a1c34251c9e5e57d84e4a9f037474d72b", features = [
-    "image", 
+iced = { path = "../iced", features = [
+    "image",
     "sipper",
     # "debug",
     # "time-travel", 
-    "tokio", 
-    "advanced"
+    "tokio",
+    "advanced",
 ] }
 iced_fonts = { path = "../iced_fonts", features = ["lucide"] }
 libmpv2 = "5.0.3"
@@ -27,9 +27,16 @@ serde_json = { package = "serde_json_path_to_error", version = "0.1.5" }
 http-serde = "2.1.1"
 blurhash = "0.2.3"
 bytes = "1.11.1"
-sea-orm = { version = "2.0.0-rc.37", features = ["sqlx-sqlite", "runtime-tokio", "with-chrono", "schema-sync", "entity-registry"] }
+sea-orm = { version = "2.0.0-rc.37", features = [
+    "sqlx-sqlite",
+    "runtime-tokio",
+    "with-chrono",
+    "schema-sync",
+    "entity-registry",
+] }
 ordered-float = { version = "5.3.0", features = ["serde"] }
 uuid = { version = "1.23.0", features = ["v3", "v4"] }
 log = "0.4.29"
 itertools = "0.14.0"
+env_logger = "0.11.10"
 # console-subscriber = "0.5.0"
