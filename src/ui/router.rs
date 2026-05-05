@@ -1,11 +1,8 @@
 use iced::{
-    Element,
-    Length::Fill,
-    Task,
-    widget::{
+    Element, Length::Fill, Subscription, Task, widget::{
         self,
         container::background,
-    },
+    }
 };
 
 use crate::ui::routes::tracks::{self, Tracks};
@@ -37,7 +34,7 @@ pub enum Route {
 #[derive(Debug, Clone)]
 pub enum Message {
     ChangeRoute(Route),
-    TracksMessage(tracks::Message),
+    TracksDriver(tracks::Message),
 }
 
 impl Router {
@@ -49,7 +46,7 @@ impl Router {
                 .into(),
             Route::Favorites => todo!(),
             Route::Albums => todo!(),
-            Route::Tracks => self.tracks.view().map(Message::TracksMessage),
+            Route::Tracks => self.tracks.view().map(Message::TracksDriver),
             Route::AlbumArtists => todo!(),
             Route::Artists => todo!(),
             Route::Genres => todo!(),
@@ -67,10 +64,10 @@ impl Router {
                 self.route = route;
                 Task::none()
             }
-            Message::TracksMessage(tracks_message) => self
+            Message::TracksDriver(tracks_message) => self
                 .tracks
                 .update(tracks_message)
-                .map(Message::TracksMessage),
+                .map(Message::TracksDriver),
         }
     }
 }

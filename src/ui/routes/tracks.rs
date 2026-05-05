@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use iced::{
     Alignment::Center,
-    Border, Element, Font,
-    Length::Fill,
-    Task,
+    Border, Color, Element, Font,
+    Length::{self, Fill},
+    Subscription, Task,
     alignment::Horizontal,
     font,
     widget::{
@@ -58,7 +58,7 @@ pub enum Message {
     RowsCreated(Vec<RowData>),
     /// A driver for the table
     TableDriver(table::Message<CellMessage>),
-    Play,
+    PlayAllTracks,
 }
 
 #[derive(Debug, Clone)]
@@ -105,7 +105,7 @@ impl Tracks {
                 style.border = Border::default().rounded(50);
                 style
             })
-            .on_press(Message::Play);
+            .on_press(Message::PlayAllTracks);
 
         let tracks = column![
             widget::space().height(8),
@@ -122,7 +122,10 @@ impl Tracks {
             ])
             .height(48),
             widget::space().height(16),
-            self.track_table.view().map(Message::TableDriver)
+            self.track_table
+                .view()
+                .map(Message::TableDriver)
+                .explain(Color::BLACK)
         ];
 
         widget::sensor(tracks)
@@ -134,7 +137,7 @@ impl Tracks {
         match message {
             Message::FetchTracks => {
                 // Only fetch first time
-                if !self.track_table.is_empty() {
+                if !self.track_table.data().is_empty() {
                     return Task::none();
                 }
 
@@ -172,7 +175,7 @@ impl Tracks {
             Message::TableDriver(m) => self.track_table.update(m).map(Message::TableDriver),
             // Only bubbles to the router component
             // Message::ChangeRoute(_) => Task::none(),
-            Message::Play => todo!(),
+            Message::PlayAllTracks => Task::none(),
         }
     }
 
@@ -183,11 +186,12 @@ impl Tracks {
             || widget::text("#").into(),
             move |row_data: &RowData| widget::text("0").into(),
         )
-        .align_x(Horizontal::Center);
+        .align_x(Horizontal::Center)
+        .intial_width(Length::Fixed(64.0));
 
         // Combined title column
-        let title_col = Column::new(|| widget::text("Name").into(), Self::combined_title).update(
-            |row_data, message| {
+        let title_col = Column::new(|| widget::text("Name").into(), Self::combined_title)
+            .update(|row_data, message| {
                 // We need to drive the image
                 if let CellMessage::ImageDriver(m) = message {
                     row_data
@@ -199,8 +203,8 @@ impl Tracks {
                 } else {
                     Task::none()
                 }
-            },
-        );
+            })
+            .intial_width(Length::FillPortion(2));
 
         // Album column
         let album_col = Column::new(
@@ -221,7 +225,8 @@ impl Tracks {
                     .ellipsis(text::Ellipsis::End)
                     .into()
             },
-        );
+        )
+        .intial_width(Length::FillPortion(1));
 
         // Duration column
         let duration_col = Column::new(
@@ -232,7 +237,8 @@ impl Tracks {
                 ))
                 .into()
             },
-        );
+        )
+        .intial_width(Length::Fixed(96.0));
 
         // Genre column
         let genre_col = Column::new(
@@ -252,14 +258,15 @@ impl Tracks {
                     .ellipsis(text::Ellipsis::End)
                     .into()
             },
-        );
+        )
+        .intial_width(Length::FillPortion(1));
 
         Table::default()
-            .column(index_col)
             .column(title_col)
             .column(duration_col)
             .column(album_col)
             .column(genre_col)
+            .column(index_col)
     }
 
     pub fn combined_title(row_data: &RowData) -> Element<'_, CellMessage> {
@@ -307,6 +314,7 @@ impl Tracks {
                 .center_y(64)
                 .clip(true)
         ]
+        .clip(true)
         .into()
     }
 }

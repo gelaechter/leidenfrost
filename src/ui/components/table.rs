@@ -1,19 +1,16 @@
-use std::time::Duration;
-
 use iced::{
-    Color, Element, Event,
-    Length::{Fill, Shrink},
-    Padding, Point, Subscription, Task, Theme,
+    Color, Element,
+    Length::{self, Fill, FillPortion, Fixed, Shrink},
+    Point, Size, Subscription, Task, Theme,
     advanced::graphics::futures::MaybeSend,
-    alignment, event,
-    mouse::{self},
+    alignment,
+    mouse::Interaction,
     widget::{
         self,
         button::{self, Status, Style},
-        container::{self},
+        row,
     },
 };
-use itertools::Itertools;
 use uuid::Uuid;
 
 #[repr(transparent)]
@@ -32,10 +29,19 @@ pub struct Table<T, M> {
     /// The table columns
     /// These dictate view, they define multiple ways to draw the state (the rows)
     columns: Vec<Column<T, M>>,
-    /// A split that the user is currently hovering over
-    hovered_split: Option<(usize, Point)>,
-    /// A split that the user is currently grabbing
-    grabbed_split: Option<(usize, Point)>,
+    /// The current mouse position
+    mouse_position: Point,
+    /// Information about a resize process
+    resize_info: Option<ResizeInfo>,
+}
+
+pub struct ResizeInfo {
+    /// Point where something started to get dragged
+    drag_point: Point,
+    /// A column that is at the moment being resized
+    resizing_col: usize,
+    /// The width of a column before resizing
+    size_before: f32,
 }
 
 // Deriving default doesn't work
@@ -44,22 +50,30 @@ impl<T, M> Default for Table<T, M> {
         Self {
             rows: Default::default(),
             columns: Default::default(),
-            hovered_split: Default::default(),
-            grabbed_split: Default::default(),
+            mouse_position: Default::default(),
+            resize_info: Default::default(),
         }
     }
 }
 
 impl<T, M> Table<T, M> {
-    pub const fn is_empty(&self) -> bool {
-        self.rows.is_empty()
+    /// Grants a view into the data the table contains
+    pub fn data(&self) -> Vec<&T> {
+        self.rows.iter().map(|r| &r.item).collect()
     }
 
+    /// Grants a mutable view into the data the table contains
+    pub fn data_mut(&mut self) -> Vec<&mut T> {
+        self.rows.iter_mut().map(|r| &mut r.item).collect()
+    }
+
+    /// Extends the table data
     pub fn extend_rows(&mut self, rows: Vec<T>) {
         let rows: Vec<Row<T>> = rows.into_iter().map(Row::new).collect();
         self.rows.extend(rows);
     }
 
+    /// Adds an additional column to the table
     pub fn column(mut self, column: Column<T, M>) -> Self {
         self.columns.push(column);
         self
@@ -97,15 +111,20 @@ pub struct Column<T, M> {
     align_x: alignment::Horizontal,
     /// How this columns contents are aligned on the y axis
     align_y: alignment::Vertical,
-    /// The preferred relative width of this column ([`iced::Length::FillPortion`])
-    pref_rel_width: u32,
-    /// The minimum absolute width of this column
-    min_abs_width: f32,
-    /// The current absolute width of this column
-    width: f32,
+    /// The target length of this column which we use for sizing
+    width: Length,
+    /// The minimal absolute width for this column
+    min_width: f32,
+    /// Marker for if the
+    relative_sized: bool,
+    /// The current measured width of the column
+    measured_width: f32,
+    /// If the cursor is currently on this columns grab area
+    on_grab_area: bool,
 }
 
 impl<T, M> Column<T, M> {
+    /// Creates a new column with a header and a data-view
     pub fn new(
         header: impl Fn() -> Element<'static, M> + 'static,
         view: impl for<'a> Fn(&'a T) -> Element<'a, M> + 'static,
@@ -117,40 +136,65 @@ impl<T, M> Column<T, M> {
             update: Box::new(|_t, _m| Task::none()),
             align_x: alignment::Horizontal::Left,
             align_y: alignment::Vertical::Center,
-            pref_rel_width: 1,
-            min_abs_width: 64.0,
-            width: 300.0,
+            width: FillPortion(1),
+            measured_width: 0.0,
+            on_grab_area: false,
+            relative_sized: false,
+            min_width: 64.0,
         }
     }
 
+    /// Sets the update method for this column if it's stateful
     pub fn update(mut self, update: impl Fn(&mut T, M) -> Task<M> + 'static) -> Column<T, M> {
         self.update = Box::new(update);
         self
     }
 
+    /// Sets the x-axis alignment of this column
     pub fn align_x(mut self, alignment: alignment::Horizontal) -> Self {
         self.align_x = alignment;
         self
     }
 
+    /// Sets the y-axis alignment of this column
     pub fn align_y(mut self, alignment: alignment::Vertical) -> Self {
         self.align_y = alignment;
+        self
+    }
+
+    /// Sets initial width of this column
+    pub fn intial_width(mut self, width: Length) -> Self {
+        self.relative_sized = match width {
+            FillPortion(_) => true,
+            Fixed(_) => false,
+            _ => panic!("Columns can only be fixed or by portion"),
+        };
+        self.width = width;
+        self
+    }
+
+    /// Sets the minimal absolute width of this column
+    pub fn min_width(mut self, width: f32) -> Self {
+        self.min_width = width;
         self
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum Message<M: Clone> {
+    /// Row visibility
     RowShown(usize),
     RowHidden(usize),
-    ColumnResized(usize, f32),
-    HeaderPress(usize),
-    HeaderRelease,
-    HeaderMove(Point),
-    EventOccurred(Event),
+    /// Driver for column content
     ColumnDriver(RowId, ColId, M),
-    /// None message meant to consume the header element view
+    /// Mouse events
+    MouseMoved(Point),
+    MousePressed,
+    MouseReleased,
+    /// Message meant to consume the header element view
     None,
+    /// Notification on column size change
+    MeasureColumn(usize, Size),
 }
 
 /// The height one cell of the track table has
@@ -164,13 +208,25 @@ where
     M: std::fmt::Debug + Clone + MaybeSend + 'static,
 {
     pub fn view(&self) -> Element<'_, Message<M>> {
-        widget::column![
+        let content = widget::column![
             widget::rule::horizontal(1),
             self.table_header(),
             widget::rule::horizontal(1),
             self.sliding_window()
-        ]
-        .into()
+        ];
+
+        let mouse_area = widget::mouse_area(content)
+            .on_move(Message::MouseMoved)
+            .on_press(Message::MousePressed)
+            .on_release(Message::MouseReleased);
+
+        let mouse_area = if self.columns.iter().any(|c| c.on_grab_area) {
+            mouse_area.interaction(Interaction::ResizingHorizontally)
+        } else {
+            mouse_area
+        };
+
+        mouse_area.into()
     }
 
     pub fn update(&mut self, message: Message<M>) -> Task<Message<M>> {
@@ -183,42 +239,9 @@ where
                 self.rows[row_idx].visible = false;
                 Task::none()
             }
-            // Update column size
-            Message::ColumnResized(index, width) => {
-                // self.columns.get_mut(index).unwrap().width = width;
-                Task::none()
-            }
-            Message::HeaderPress(idx) => {
-                println!("Press");
-                self.grabbed_split = self.hovered_split;
-                Task::none()
-            }
-            Message::HeaderRelease => {
-                self.grabbed_split = None;
-                Task::none()
-            }
-            Message::HeaderMove(point) => {
-                self.hovered_split = self.on_split(point).map(|i| (i, point));
-                println!("{}", self.hovered_split.is_some());
-                if let Some((index, point2)) = self.grabbed_split {
-                    self.grabbed_split = self.grabbed_split.map(|(i, _p)| (i, point));
-                    self.columns[index].width += point2.x - point.x;
-                    println!("Updating {index} to {}", self.columns[index].width);
-                    // A split was grabbed so we update the width of the item before it
-                }
-                Task::none()
-            }
-            Message::EventOccurred(Event::Mouse(e)) => match e {
-                mouse::Event::CursorEntered => todo!(),
-                mouse::Event::CursorLeft => todo!(),
-                mouse::Event::CursorMoved { position } => todo!(),
-                mouse::Event::ButtonPressed(button) => todo!(),
-                mouse::Event::ButtonReleased(button) => todo!(),
-                mouse::Event::WheelScrolled { delta } => todo!(),
-            },
-            Message::EventOccurred(_) => Task::none(),
-
             Message::ColumnDriver(row_id, col_id, message) => {
+                // TODO: atrocious approach for indexing
+                // Either use hashmaps or just use the actual indices
                 let row = self.rows.iter_mut().find(|r| r.id == row_id);
                 let col = self.columns.iter_mut().find(|c| c.id == col_id);
 
@@ -232,54 +255,128 @@ where
                 }
             }
             Message::None => Task::none(),
+            Message::MouseMoved(position) => {
+                self.mouse_position = position;
+
+                // Check if the mouse is on any resize points
+                let mut end = 0.0;
+                for col in &mut self.columns {
+                    end += col.measured_width;
+                    col.on_grab_area = end - 8.0 <= position.x && position.x <= end + 4.0;
+                }
+
+                // Resize column if needed
+                if let Some(ResizeInfo {
+                    drag_point,
+                    resizing_col,
+                    size_before,
+                }) = self.resize_info
+                {
+                    let col = &mut self.columns[resizing_col];
+                    let target_size = size_before - (drag_point.x - self.mouse_position.x);
+                    // Restrain to not go below minimum width
+                    let target_size = target_size.max(col.min_width);
+
+                    col.width = Fixed(target_size);
+                }
+
+                Task::none()
+            }
+            Message::MousePressed => {
+                // Check if the cursor is on a resizer
+                let Some(resizing_col) = self.columns.iter().position(|c| c.on_grab_area) else {
+                    return Task::none();
+                };
+
+                self.resize_info = Some(ResizeInfo {
+                    drag_point: self.mouse_position,
+                    resizing_col,
+                    size_before: self.columns[resizing_col].measured_width,
+                });
+
+                // Fix all columns before the one being resized
+                for col in self.columns.iter_mut().take(resizing_col + 1) {
+                    col.width = Fixed(col.measured_width)
+                }
+
+                // Fill last column
+                if let Some(col) = self.columns.last_mut() {
+                    col.width = FillPortion(col.measured_width.round() as u16)
+                }
+                Task::none()
+            }
+            Message::MouseReleased => {
+                self.resize_info = None;
+
+                // Return relative columns to a portioned layout
+                for col in &mut self.columns {
+                    if col.relative_sized {
+                        col.width = FillPortion(col.measured_width.round() as u16)
+                    } else {
+                        col.width = Fixed(col.measured_width)
+                    }
+                }
+
+                Task::none()
+            }
+            Message::MeasureColumn(idx, size) => {
+                self.columns[idx].measured_width = size.width;
+                Task::none()
+            }
         }
     }
 
-    fn subscription(&self) -> Subscription<Message<M>> {
-        event::listen().map(Message::EventOccurred)
-    }
-
-    pub fn on_split(&self, point: Point) -> Option<usize> {
-        let mut split_start = 0.0;
-        let x = point.x;
-        self.columns.iter().position(|col| {
-            split_start += col.width;
-            let split_end: f32 = split_start + 4.0;
-            split_start <= x && x <= split_end
-        })
+    /// Calculates the x positions of the end of the columns
+    pub fn column_split(&self) -> Vec<f32> {
+        self.columns
+            .iter()
+            .scan(0.0, |counter, col| {
+                *counter += col.measured_width;
+                Some(*counter)
+            })
+            .collect()
     }
 
     pub fn table_header(&self) -> Element<'_, Message<M>> {
-        let headers = self
-            .columns
-            .iter()
-            .enumerate()
-            .map(|(idx, col)| {
-                // Header container
-                widget::container((col.header)().map(|_m| Message::None))
-                    .padding(Padding::new(0.0).horizontal(8))
-                    .style(container::bordered_box)
-                    .height(Fill)
-                    .width(col.width)
-                    .align_x(col.align_x)
-                    .align_y(col.align_y)
-                    .into()
-            })
-            .intersperse_with(move || {
-                // Just a button that shows the grab area for resizing
-                widget::button(widget::space())
-                    .style(|theme: &Theme, status| {
-                        Style::default().with_background(match status {
-                            Status::Pressed | Status::Hovered => {
-                                theme.palette().background.weaker.color
-                            }
-                            _ => Color::TRANSPARENT,
+        let last = self.columns.len() - 1;
+        let headers = self.columns.iter().enumerate().map(|(idx, col)| {
+            // All the headers except the last get a grab button
+            let content: Element<'_, Message<M>> = if idx < last {
+                // Grab button for resizing
+                let button = widget::button(widget::space())
+                    .style(|theme: &Theme, _status| {
+                        Style::default().with_background(if col.on_grab_area {
+                            theme.palette().primary.strong.color
+                        } else {
+                            theme.palette().background.strong.color
                         })
                     })
-                    .width(4)
-                    .height(Fill)
-                    .into()
-            });
+                    .width(2)
+                    .height(Fill);
+
+                row![
+                    (col.header)().map(|_m| Message::None),
+                    widget::space().width(Fill),
+                    button
+                ]
+                .into()
+            } else {
+                (col.header)().map(|_m| Message::None)
+            };
+
+            // Header container
+            let container = widget::container(content)
+                .height(Fill)
+                .width(col.width)
+                .align_x(col.align_x)
+                .align_y(col.align_y);
+
+            // Measure the header width
+            widget::sensor(container)
+                .on_show(move |s| Message::MeasureColumn(idx, s))
+                .on_resize(move |s| Message::MeasureColumn(idx, s))
+                .into()
+        });
 
         widget::container(widget::row(headers))
             .width(Fill)
@@ -301,8 +398,7 @@ where
             // Wrap the chunk with a sensor to watch if it's visible
             let content = widget::sensor(content)
                 .key(row_idx)
-                .anticipate(ANTICIPATED_CELLS * ROW_HEIGHT) // Anticipate cells
-                // .delay(Duration::from_millis(1))
+                .anticipate(ANTICIPATED_CELLS * ROW_HEIGHT)
                 .on_show(move |_| Message::RowShown(row_idx))
                 .on_hide(Message::RowHidden(row_idx))
                 .into();
@@ -323,7 +419,7 @@ where
                 let col_id = col.id;
                 move |m| Message::ColumnDriver(row_id, col_id, m)
             }))
-            .width(col.width)
+            .width(col.measured_width)
             .clip(true)
             .height(ROW_HEIGHT)
             .align_x(col.align_x)
