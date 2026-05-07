@@ -1,9 +1,11 @@
+use core::panic;
+
 use iced::{
-    Color, Element,
+    Border, Color, Element,
     Length::{self, Fill, FillPortion, Fixed, Shrink},
-    Point, Size, Subscription, Task, Theme,
+    Padding, Point, Size, Task, Theme,
     advanced::graphics::futures::MaybeSend,
-    alignment,
+    alignment::{self, Vertical},
     mouse::Interaction,
     widget::{
         self,
@@ -121,6 +123,8 @@ pub struct Column<T, M> {
     measured_width: f32,
     /// If the cursor is currently on this columns grab area
     on_grab_area: bool,
+    /// If the column is currently selected
+    selected: bool,
 }
 
 impl<T, M> Column<T, M> {
@@ -141,6 +145,7 @@ impl<T, M> Column<T, M> {
             on_grab_area: false,
             relative_sized: false,
             min_width: 64.0,
+            selected: false,
         }
     }
 
@@ -195,10 +200,11 @@ pub enum Message<M: Clone> {
     None,
     /// Notification on column size change
     MeasureColumn(usize, Size),
+    RowClicked(usize),
 }
 
 /// The height one cell of the track table has
-const ROW_HEIGHT: u32 = 64;
+const ROW_HEIGHT: u32 = 64 + 8;
 /// How many items should be anticipated by the sensor
 const ANTICIPATED_CELLS: u32 = 2;
 
@@ -218,7 +224,8 @@ where
         let mouse_area = widget::mouse_area(content)
             .on_move(Message::MouseMoved)
             .on_press(Message::MousePressed)
-            .on_release(Message::MouseReleased);
+            .on_release(Message::MouseReleased)
+            .on_exit(Message::MouseReleased);
 
         let mouse_area = if self.columns.iter().any(|c| c.on_grab_area) {
             mouse_area.interaction(Interaction::ResizingHorizontally)
@@ -262,7 +269,7 @@ where
                 let mut end = 0.0;
                 for col in &mut self.columns {
                     end += col.measured_width;
-                    col.on_grab_area = end - 8.0 <= position.x && position.x <= end + 4.0;
+                    col.on_grab_area = end - 6.0 <= position.x && position.x <= end + 4.0;
                 }
 
                 // Resize column if needed
@@ -272,12 +279,8 @@ where
                     size_before,
                 }) = self.resize_info
                 {
-                    let col = &mut self.columns[resizing_col];
                     let target_size = size_before - (drag_point.x - self.mouse_position.x);
-                    // Restrain to not go below minimum width
-                    let target_size = target_size.max(col.min_width);
-
-                    col.width = Fixed(target_size);
+                    self.columns[resizing_col].width = Fixed(target_size);
                 }
 
                 Task::none()
@@ -295,12 +298,16 @@ where
                 });
 
                 // Fix all columns before the one being resized
+                // This allows us to resize without side effects
+                // (No previous column changes the position of the current one)
                 for col in self.columns.iter_mut().take(resizing_col + 1) {
                     col.width = Fixed(col.measured_width)
                 }
 
-                // Fill last column
-                if let Some(col) = self.columns.last_mut() {
+                // Let the last column fill the rest of the space left when resizing the second-to-last column
+                if resizing_col == self.columns.len() - 2
+                    && let Some(col) = self.columns.last_mut()
+                {
                     col.width = FillPortion(col.measured_width.round() as u16)
                 }
                 Task::none()
@@ -319,8 +326,23 @@ where
 
                 Task::none()
             }
-            Message::MeasureColumn(idx, size) => {
-                self.columns[idx].measured_width = size.width;
+            Message::MeasureColumn(idx, Size { width, .. }) => {
+                let column = &mut self.columns[idx];
+
+                if width >= column.min_width {
+                    column.measured_width = width;
+                    Task::none()
+                } else {
+                    // Abort resizing if any column goes below the minimum
+                    // TODO: This fully disengages the resizing process if possible
+                    //  this should instead disallow any further shrinking but allow growth
+                    Task::done(Message::MouseReleased)
+                }
+            }
+            Message::RowClicked(idx) => {
+                for (index, row) in self.rows.iter_mut().enumerate() {
+                    row.selected = index == idx
+                }
                 Task::none()
             }
         }
@@ -340,39 +362,43 @@ where
     pub fn table_header(&self) -> Element<'_, Message<M>> {
         let last = self.columns.len() - 1;
         let headers = self.columns.iter().enumerate().map(|(idx, col)| {
+            // The header
+            let header = widget::container((col.header)().map(|_m| Message::None))
+                .padding(Padding::ZERO.horizontal(8))
+                .height(Fill)
+                .width(Fill)
+                .align_x(col.align_x)
+                .align_y(Vertical::Center);
+
             // All the headers except the last get a grab button
             let content: Element<'_, Message<M>> = if idx < last {
                 // Grab button for resizing
-                let button = widget::button(widget::space())
-                    .style(|theme: &Theme, _status| {
-                        Style::default().with_background(if col.on_grab_area {
-                            theme.palette().primary.strong.color
-                        } else {
-                            theme.palette().background.strong.color
+                let button = widget::container(
+                    widget::button(widget::space())
+                        .style(|theme: &Theme, _status| Style {
+                            background: Some(
+                                if col.on_grab_area {
+                                    theme.palette().primary.strong.color
+                                } else {
+                                    theme.palette().background.strong.color
+                                }
+                                .into(),
+                            ),
+                            border: Border::default().rounded(90),
+                            ..Default::default()
                         })
-                    })
-                    .width(2)
-                    .height(Fill);
+                        .width(2)
+                        .height(40),
+                )
+                .padding(Padding::ZERO.vertical(6));
 
-                row![
-                    (col.header)().map(|_m| Message::None),
-                    widget::space().width(Fill),
-                    button
-                ]
-                .into()
+                row![header, button].width(Fill).into()
             } else {
-                (col.header)().map(|_m| Message::None)
+                header.into()
             };
 
-            // Header container
-            let container = widget::container(content)
-                .height(Fill)
-                .width(col.width)
-                .align_x(col.align_x)
-                .align_y(col.align_y);
-
             // Measure the header width
-            widget::sensor(container)
+            widget::sensor(widget::container(content).width(col.width))
                 .on_show(move |s| Message::MeasureColumn(idx, s))
                 .on_resize(move |s| Message::MeasureColumn(idx, s))
                 .into()
@@ -384,13 +410,34 @@ where
             .into()
     }
 
+    pub fn grab_button(column: &Column<T, M>) -> widget::Container<'_, Message<M>> {
+        widget::container(
+            widget::button(widget::space())
+                .style(|theme: &Theme, _status| Style {
+                    background: Some(
+                        if column.on_grab_area {
+                            theme.palette().primary.strong.color
+                        } else {
+                            theme.palette().background.strong.color
+                        }
+                        .into(),
+                    ),
+                    border: Border::default().rounded(90),
+                    ..Default::default()
+                })
+                .width(4)
+                .height(40),
+        )
+        .padding(Padding::ZERO.vertical(6))
+    }
+
     pub fn sliding_window(&self) -> Element<'_, Message<M>> {
         // Split the rows into chunks of size CHUNK_ROWS
         let rows = self.rows.iter().enumerate().map(|(row_idx, row)| {
             // Check if the chunk is visible
             let content: Element<'_, Message<M>> = match row.visible {
                 // Produce a table segment if the chunk is visible
-                true => self.item_row(row),
+                true => self.item_row(row_idx, row),
                 // Produce a cheap placeholder otherwise
                 false => widget::space().width(Fill).height(ROW_HEIGHT).into(),
             };
@@ -412,21 +459,23 @@ where
     }
 
     /// A row showing all the columns for an item T
-    pub fn item_row<'a>(&self, row: &'a Row<T>) -> Element<'a, Message<M>> {
+    pub fn item_row<'a>(&self, row_idx: usize, row: &'a Row<T>) -> Element<'a, Message<M>> {
         let columns = self.columns.iter().map(move |col| {
             widget::container((col.view)(&row.item).map({
                 let row_id = row.id;
                 let col_id = col.id;
                 move |m| Message::ColumnDriver(row_id, col_id, m)
             }))
-            .width(col.measured_width)
-            .clip(true)
+            .width(col.measured_width - 2.0)
             .height(ROW_HEIGHT)
+            .padding(Padding::new(8.0))
+            .clip(true)
             .align_x(col.align_x)
             .align_y(col.align_y)
             .into()
         });
 
+        // Row button allowing
         widget::button(widget::row(columns).width(Fill))
             .style({
                 let selected = row.selected;
@@ -436,7 +485,7 @@ where
                         true => theme.palette().background.neutral.color,
                         // Hovered
                         false if matches!(status, Status::Hovered) => {
-                            theme.palette().primary.weak.color
+                            theme.palette().background.weak.color
                         }
                         // Neither
                         false => Color::TRANSPARENT,
@@ -444,8 +493,8 @@ where
                 }
             })
             .height(ROW_HEIGHT)
-            // .padding(Padding::new(0.0).vertical(2))
-            // .on_press(Message::TrackClicked(view.track.id.clone()))
+            .padding(Padding::new(0.0))
+            .on_press(Message::RowClicked(row_idx))
             .width(Fill)
             .into()
     }

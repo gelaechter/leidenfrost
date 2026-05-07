@@ -1,12 +1,7 @@
 use iced::{
-    ContentFit, Element,
-    Length::Fill,
-    Size, Task,
-    task::{self},
-    widget::{
-        self, container,
-        image::{self},
-    },
+    ContentFit, Element, Length::Fill, Size, Task, task::{self}, widget::{
+        self, image::{self},
+    }
 };
 use iced_fonts::lucide;
 use serde::Deserialize;
@@ -99,7 +94,6 @@ pub struct Image {
     blurhash: Option<String>,
     /// An image resizer if the endpoint supports auto sizing
     image_resizer: Option<Endpoint>,
-    // TODO: store a proper state with error handling
     /// The currently allocated image data (if any)
     status: Option<Content>,
     /// Any running download task
@@ -207,11 +201,12 @@ impl Image {
             sensor = sensor.delay(delay)
         }
 
-        widget::container(sensor)
-            .style(container::rounded_box)
-            .clip(true)
-            .center(64)
-            .into()
+        sensor.into()
+        // widget::container(sensor)
+        //     .style(container::rounded_box)
+        //     .clip(true)
+        //     .center(64)
+        //     .into()
     }
 
     pub fn update(&mut self, message: IMessage) -> Task<IMessage> {

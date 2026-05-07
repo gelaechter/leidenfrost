@@ -1,17 +1,20 @@
-use std::time::Duration;
+use std::{
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
 
 use iced::{
     Alignment::Center,
-    Border, Color, Element, Font,
+    Border, Element, Font,
     Length::{self, Fill},
-    Subscription, Task,
+    Task,
     alignment::Horizontal,
     font,
     widget::{
         self,
         button::{self},
         column, row,
-        text::{self, Wrapping},
+        text::{self, Style, Wrapping},
     },
 };
 use iced_fonts::lucide;
@@ -61,8 +64,11 @@ pub enum Message {
     PlayAllTracks,
 }
 
+static COUNTER: AtomicUsize = AtomicUsize::new(1);
+
 #[derive(Debug, Clone)]
 struct RowData {
+    index: usize,
     view: TrackView,
     image: Option<Image>,
 }
@@ -83,6 +89,7 @@ impl From<TrackView> for RowData {
         RowData {
             view: track_view,
             image,
+            index: COUNTER.fetch_add(1, Ordering::Relaxed),
         }
     }
 }
@@ -122,10 +129,7 @@ impl Tracks {
             ])
             .height(48),
             widget::space().height(16),
-            self.track_table
-                .view()
-                .map(Message::TableDriver)
-                .explain(Color::BLACK)
+            self.track_table.view().map(Message::TableDriver)
         ];
 
         widget::sensor(tracks)
@@ -157,11 +161,13 @@ impl Tracks {
                     Task::perform(
                         async {
                             // [`Into::into`]
-                            tokio::task::spawn_blocking(move || {
+                            let row_data: Vec<RowData> = tokio::task::spawn_blocking(move || {
                                 tracks.into_iter().map(RowData::from).collect()
                             })
                             .await
-                            .unwrap()
+                            .unwrap();
+
+                            (0..100).flat_map(|_| row_data.clone()).collect()
                         },
                         Message::RowsCreated,
                     )
@@ -179,18 +185,18 @@ impl Tracks {
         }
     }
 
-    /// One row representing the
+    /// The table showing the tracks
     fn track_table() -> Table<RowData, CellMessage> {
         // Index column
         let index_col = Column::new(
-            || widget::text("#").into(),
-            move |row_data: &RowData| widget::text("0").into(),
+            || header_text("#").into(),
+            move |row_data: &RowData| widget::text(row_data.index).style(muted_text).into(),
         )
         .align_x(Horizontal::Center)
         .intial_width(Length::Fixed(64.0));
 
         // Combined title column
-        let title_col = Column::new(|| widget::text("Name").into(), Self::combined_title)
+        let title_col = Column::new(|| header_text("Name").into(), combined_title_column)
             .update(|row_data, message| {
                 // We need to drive the image
                 if let CellMessage::ImageDriver(m) = message {
@@ -207,114 +213,141 @@ impl Tracks {
             .intial_width(Length::FillPortion(2));
 
         // Album column
-        let album_col = Column::new(
-            || widget::text("Album").into(),
-            |row_data: &RowData| {
-                let album_name = row_data
-                    .view
-                    .album_name
-                    .clone()
-                    .unwrap_or("Unknown album".to_owned());
-
-                album_name
-                    .link(
-                        Route::Album(row_data.view.track.album_id.clone()),
-                        CellMessage::ChangeRoute,
-                    )
-                    .wrapping(Wrapping::None)
-                    .ellipsis(text::Ellipsis::End)
-                    .into()
-            },
-        )
-        .intial_width(Length::FillPortion(1));
+        let album_col = Column::new(|| header_text("Album").into(), album_column)
+            .intial_width(Length::FillPortion(1));
 
         // Duration column
         let duration_col = Column::new(
-            || widget::text("Duration").into(),
-            |row_data: &RowData| {
-                widget::text(format_duration(
-                    row_data.view.track.duration.unwrap_or_default() as f64,
-                ))
+            || {
+                widget::responsive(|size| {
+                    widget::container(if size.width >= 80.0 {
+                        header_text("Duration")
+                    } else {
+                        lucide::clock_two()
+                    })
+                    .center(Fill)
+                    .into()
+                })
                 .into()
             },
+            duration_column,
         )
-        .intial_width(Length::Fixed(96.0));
+        .intial_width(Length::Fixed(96.0))
+        .align_x(Horizontal::Center);
 
         // Genre column
-        let genre_col = Column::new(
-            || widget::text("Genres").into(),
-            |row_data: &RowData| {
-                row_data
-                    .view
-                    .genres
-                    .clone()
-                    .into_links(
-                        |RelatedGenre { id, name }| {
-                            (name.unwrap_or("Unknown genre".to_owned()), Route::Genre(id))
-                        },
-                        CellMessage::ChangeRoute,
-                    )
-                    .wrapping(Wrapping::None)
-                    .ellipsis(text::Ellipsis::End)
-                    .into()
-            },
-        )
-        .intial_width(Length::FillPortion(1));
+        let genre_col = Column::new(|| header_text("Genres").into(), genre_column)
+            .intial_width(Length::FillPortion(1));
 
         Table::default()
-            .column(title_col)
-            .column(duration_col)
-            .column(album_col)
-            .column(genre_col)
             .column(index_col)
+            .column(title_col)
+            .column(album_col)
+            .column(duration_col)
+            .column(genre_col)
     }
+}
 
-    pub fn combined_title(row_data: &RowData) -> Element<'_, CellMessage> {
-        let RowData {
-            view: TrackView { track, artists, .. },
-            image,
-        } = row_data;
+fn header_text(content: &str) -> widget::Text<'_> {
+    widget::text(content.to_uppercase()).ellipsis(text::Ellipsis::End)
+}
 
-        let track_title = track.title.clone().unwrap_or("No title".to_owned());
-        let artists = artists.clone();
+fn muted_text(theme: &iced::Theme) -> widget::text::Style {
+    Style {
+        color: Some(theme.palette().background.base.text.scale_alpha(0.7)),
+    }
+}
 
-        // Image
-        let image: Element<'_, CellMessage> = if let Some(image) = image {
-            // Show an image if it's ready
-            image.view().map(CellMessage::ImageDriver)
-        } else {
-            // Or show a placeholder
-            lucide::disc_album().size(18).into()
-        };
+fn combined_title_column(row_data: &RowData) -> Element<'_, CellMessage> {
+    let RowData {
+        view: TrackView { track, artists, .. },
+        image,
+        ..
+    } = row_data;
 
-        // Title
-        let title = widget::text(track_title)
-            .wrapping(Wrapping::None)
-            .ellipsis(text::Ellipsis::End);
+    let track_title = track.title.clone().unwrap_or("No title".to_owned());
+    let artists = artists.clone();
 
-        // Artist list (comma separated)
-        let artist_text = artists
-            .into_links(
-                |RelatedArtist { id, name }| {
-                    (
-                        name.unwrap_or("Unknown artist".to_owned()),
-                        Route::Artist(id.to_string()),
-                    )
-                },
-                CellMessage::ChangeRoute,
-            )
-            .wrapping(Wrapping::None)
-            .ellipsis(text::Ellipsis::End)
-            .size(14);
+    // Image
+    let image: Element<'_, CellMessage> = if let Some(image) = image {
+        // Show an image if it's ready
+        image.view().map(CellMessage::ImageDriver)
+    } else {
+        // Or show a placeholder
+        lucide::disc_album().size(18).into()
+    };
 
-        row![
-            widget::container(image).center(64),
-            widget::space().width(8),
-            widget::container(column![title, widget::space().width(2), artist_text])
-                .center_y(64)
-                .clip(true)
-        ]
-        .clip(true)
+    // Title
+    let title = widget::text(track_title)
+        .wrapping(Wrapping::None)
+        .ellipsis(text::Ellipsis::End);
+
+    // Artist list (comma separated)
+    let artist_text = artists
+        .into_links(
+            |RelatedArtist { id, name }| {
+                (
+                    name.unwrap_or("Unknown artist".to_owned()),
+                    Route::Artist(id.to_string()),
+                )
+            },
+            CellMessage::ChangeRoute,
+        )
+        .wrapping(Wrapping::None)
+        .style(muted_text)
+        .ellipsis(text::Ellipsis::End)
+        .size(14);
+
+    row![
+        widget::container(image).center(64),
+        widget::space().width(8),
+        widget::container(column![title, widget::space().width(2), artist_text])
+            .center_y(64)
+            .clip(true)
+    ]
+    .clip(true)
+    .into()
+}
+
+fn album_column(row_data: &RowData) -> Element<'_, CellMessage> {
+    let album_name = row_data
+        .view
+        .album_name
+        .clone()
+        .unwrap_or("Unknown album".to_owned());
+
+    album_name
+        .link(
+            Route::Album(row_data.view.track.album_id.clone()),
+            CellMessage::ChangeRoute,
+        )
+        .style(muted_text)
+        .wrapping(Wrapping::None)
+        .ellipsis(text::Ellipsis::End)
         .into()
-    }
+}
+
+fn duration_column(row_data: &RowData) -> Element<'_, CellMessage> {
+    widget::text(format_duration(
+        row_data.view.track.duration.unwrap_or_default() as f64,
+    ))
+    .style(muted_text)
+    .into()
+}
+
+fn genre_column(row_data: &RowData) -> Element<'_, CellMessage> {
+    row_data
+        .view
+        .genres
+        .clone()
+        .into_links(
+            |RelatedGenre { id, name }| {
+                (name.unwrap_or("Unknown genre".to_owned()), Route::Genre(id))
+            },
+            CellMessage::ChangeRoute,
+        )
+        .style(muted_text)
+        .wrapping(Wrapping::None)
+        .ellipsis(text::Ellipsis::End)
+        .into()
 }
