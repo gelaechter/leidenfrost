@@ -10,15 +10,15 @@ use iced::{
 };
 
 use iced::widget::pane_grid;
+use url::Url;
 
-use crate::{
-    backend::api::endpoint_api::Endpoint,
-    ui::{
-        player::{Player, PlayerMessage},
-        queue::{self, Queue},
-        router::{self, Router},
-        sidebar::{self, Sidebar},
-    },
+use crate::ui::{
+    player::{self, Player},
+    playerbar::{self, PlayerBar},
+    queue::{self, Queue},
+    router::{self, Router},
+    settings::Settings,
+    sidebar::{self, Sidebar},
 };
 
 pub struct App {
@@ -27,13 +27,8 @@ pub struct App {
     sidebar: Sidebar,
     router: Router,
     queue: Queue,
-    player_bar: Player,
-}
-
-#[derive(Default)]
-pub struct Settings {
-    selected_apis: Vec<Endpoint>,
-    debug_overlay: bool,
+    player: Player,
+    player_bar: PlayerBar,
 }
 
 impl Default for App {
@@ -41,7 +36,8 @@ impl Default for App {
         let sidebar = Sidebar::default();
         let router = Router::default();
         let queue = Queue::default();
-        let player_bar = Player::default();
+        let player = Player::default();
+        let player_bar = PlayerBar::default();
         let settings = Settings::default();
 
         // Creates a new pane state and immediately splits it
@@ -64,6 +60,7 @@ impl Default for App {
             router,
             queue,
             player_bar,
+            player,
         }
     }
 }
@@ -84,8 +81,9 @@ pub enum Message {
     Sidebar(sidebar::Message),
     Queue(queue::Message),
     Router(router::Message),
-    PlayerBar(PlayerMessage),
+    PlayerBar(playerbar::Message),
     KeyboardEvent(keyboard::Event),
+    PlayerDriver(player::Message),
 }
 
 /// The main layout of the application
@@ -103,7 +101,7 @@ impl App {
             })
             .on_drag(Message::PaneDragged)
             .on_resize(10, Message::PaneResized),
-            // the player bar
+            // The player bar
             self.player_bar.view().map(Message::PlayerBar)
         ])
         .height(Fill)
@@ -119,7 +117,7 @@ impl App {
                 Task::none()
             }
             Message::Sidebar(sidebar_message) => {
-                // 
+                //
                 let task: Task<Message> = self
                     .sidebar
                     .update(sidebar_message.clone())
@@ -143,8 +141,32 @@ impl App {
             Message::Router(router_message) => {
                 self.router.update(router_message).map(Message::Router)
             }
-            Message::PlayerBar(player_message) => {
-                self.player_bar.update(player_message);
+            // Player bar wiring
+            Message::PlayerBar(bar_message) => {
+                type BMsg = playerbar::Message;
+                type PMsg = player::Message;
+
+                match bar_message {
+                    BMsg::Pause(p) => self.player.update(PMsg::Pause(p)),
+                    BMsg::FinishSeek(d) => {
+                        self.player.update(PMsg::Seek(d));
+                        // The player bar also needs this
+                        self.player_bar.update(bar_message);
+                    },
+                    BMsg::Next => self.player.update(PMsg::Next),
+                    BMsg::Previous => self.player.update(PMsg::Previous),
+                    BMsg::Stop => self.player.update(PMsg::Stop),
+                    BMsg::Shuffle(s) => self.player.update(PMsg::Shuffle(s)),
+                    BMsg::Repeat(r) => self.player.update(PMsg::ChangeRepeatMode(r)),
+                    BMsg::PlayRandom => {
+                        let url = Url::parse(
+                            "file:///mnt/NAS/Samuel/Music/flac/Savant/Vario/05 - Shadow.flac",
+                        )
+                        .unwrap();
+                        self.player.update(PMsg::Play(url))
+                    }
+                    _ => self.player_bar.update(bar_message),
+                }
                 Task::none()
             }
             Message::KeyboardEvent(event) => match event {
@@ -157,10 +179,21 @@ impl App {
                 }
                 _ => Task::none(),
             },
+            Message::PlayerDriver(message) => {
+                if let player::Message::Event(event) = &message {
+                    self.player_bar
+                        .update(playerbar::Message::Event(event.clone()));
+                }
+                self.player.update(message);
+                Task::none()
+            }
         }
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        keyboard::listen().map(Message::KeyboardEvent)
+        Subscription::batch([
+            keyboard::listen().map(Message::KeyboardEvent),
+            Player::subscription().map(Message::PlayerDriver),
+        ])
     }
 }

@@ -32,10 +32,9 @@ use crate::{
         components::{
             image::{self, Image},
             table::{self, Column, Table},
-            utils::{IntoLink, IntoLinks},
+            utils::{IntoLink, IntoLinks, format_duration},
         },
         router::Route,
-        util::format_duration,
     },
 };
 

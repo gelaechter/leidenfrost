@@ -6,7 +6,10 @@ pub mod backend;
 pub mod ui;
 
 fn main() {
+    env_logger::init();
+
     iced::application(App::default, App::update, App::view)
+        .subscription(App::subscription)
         .font(LUCIDE_FONT_BYTES)
         .run()
         .unwrap();

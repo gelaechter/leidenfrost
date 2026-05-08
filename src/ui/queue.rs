@@ -1,8 +1,16 @@
 use iced::Element;
 use iced::widget::column;
 
+use crate::ui::components::table::Table;
+
 #[derive(Default)]
-pub struct Queue {}
+pub struct Queue {
+    table: Table<RowData, Message>
+}
+
+struct RowData {
+    
+}
 
 #[derive(Debug, Clone)]
 pub enum Message {}

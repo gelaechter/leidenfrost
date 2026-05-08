@@ -1,39 +1,21 @@
-use iced::{
-    Border, Element, Length, Subscription,
-    alignment::{Horizontal, Vertical},
-    border::Radius,
-    widget::{self, Text, column, container, row},
+use std::sync::LazyLock;
+
+use futures::Stream;
+use iced::Subscription;
+use libmpv2::{Format, Mpv};
+use tokio::sync::broadcast;
+use tokio_stream::wrappers::BroadcastStream;
+use url::Url;
+
+use crate::{
+    backend::mpv_events::MpvEvent,
+    ui::player::{
+        command::{
+            LOADFILE, PLAYLIST_MOVE, PLAYLIST_NEXT, PLAYLIST_PREV, PLAYLIST_REMOVE, SEEK, STOP,
+        },
+        property::{DURATION, LOOP_FILE, LOOP_PLAYLIST, PAUSE, SHUFFLE, TIME_POS},
+    },
 };
-use iced_fonts::lucide;
-use libmpv2::Mpv;
-
-use crate::{backend::db::models::track, ui::util::format_duration};
-
-#[derive(Clone, Debug)]
-pub enum PlayerMessage {
-    /// When the stop button has been pressed
-    StopPlayer,
-    /// Adds some songs to the queue
-    AddToQueue {
-        songs: Vec<track::Model>,
-    },
-    /// Removes some songs from the queue
-    RemoveFromQueue {
-        songs: Vec<track::Model>,
-    },
-    /// Changes the repeat mode of the player
-    ChangeRepeatMode {
-        mode: RepeatMode,
-    },
-    /// Plays the next song
-    Next,
-    /// Plays the previous song
-    Previous,
-    /// Updates the song progress
-    UpdateProgress(f64),
-    PlayRandom,
-    EventOccurred,
-}
 
 #[derive(Default, Clone, Debug)]
 pub enum RepeatMode {
@@ -56,136 +38,207 @@ pub enum PlayerState {
 
 pub struct Player {
     /// the Mpv instance
-    lib_mpv: Mpv,
-    /// The queue in an unshuffled state
-    /// This way the queue can be unshuffled again
-    unshuffled_queue: Vec<track::Model>,
-    /// Current queue
-    queue: Vec<track::Model>,
-    /// Current index in the queue
-    current_track: usize,
-    /// If the queue is shuffled or not
-    shuffle: bool,
-    /// The repeat mode of the player
-    repeat_mode: RepeatMode,
-    /// The state of the player
-    state: PlayerState,
-    /// The playback progress in milliseconds
-    progress: f64,
+    mpv: Mpv,
 }
 
 impl Default for Player {
     fn default() -> Self {
-        let lib_mpv = Mpv::with_initializer(|init| {
-            init.set_option("vid", "no")?;
-            Ok(())
-        })
-        .unwrap();
-
         Self {
-            lib_mpv,
-            unshuffled_queue: Default::default(),
-            queue: Default::default(),
-            current_track: Default::default(),
-            shuffle: Default::default(),
-            repeat_mode: Default::default(),
-            state: Default::default(),
-            progress: Default::default(),
+            mpv: initialize_mpv(),
         }
     }
 }
 
-impl Player {
-    /// Mutates the model whenever a message is dispatched
-    pub fn update(&mut self, message: PlayerMessage) {
-        match message {
-            PlayerMessage::AddToQueue { songs } => todo!(),
-            PlayerMessage::RemoveFromQueue { songs } => todo!(),
-            PlayerMessage::ChangeRepeatMode { mode } => todo!(),
-            PlayerMessage::Next => todo!(),
-            PlayerMessage::Previous => todo!(),
-            PlayerMessage::UpdateProgress(progress) => self.progress = progress,
-            PlayerMessage::StopPlayer => {
-                self.lib_mpv.command("stop", &[]).unwrap();
+/// Mpv properties (https://mpv.io/manual/master/#properties) \
+/// These can be inspected in the MPV GUI using `g-r`
+pub mod property {
+    /// https://mpv.io/manual/master/#command-interface-time-pos
+    pub const TIME_POS: &str = "time-pos";
+    /// If the player is currently paused
+    pub const PAUSE: &str = "pause";
+    /// If shuffle is active
+    pub const SHUFFLE: &str = "shuffle";
+    /// https://mpv.io/manual/master/#options-loop
+    pub const LOOP_FILE: &str = "loop-file";
+    /// https://mpv.io/manual/master/#options-loop-playlist
+    pub const LOOP_PLAYLIST: &str = "loop-playlist";
+    /// https://mpv.io/manual/master/#command-interface-duration
+    pub const DURATION: &str = "duration";
+}
+
+/// A channel over which Mpv Events can travel
+/// from the Mpv thread to the iced subscription
+static EVENT_CHANNEL: LazyLock<broadcast::Sender<MpvEvent>> =
+    LazyLock::new(|| broadcast::channel(100).0);
+
+fn initialize_mpv() -> Mpv {
+    let mpv = Mpv::with_initializer(|init| {
+        init.set_option("vid", "no")?;
+        Ok(())
+    })
+    .unwrap();
+
+    // Since [`Mpv::wait_event`] takes `&mut self` we
+    // create a second Mpv client just for receiving events
+    let mut event_context = mpv.create_client(Some("EventContext")).unwrap();
+
+    // Subscribe to all the different properties
+    event_context
+        .observe_property(TIME_POS, Format::Double, 0)
+        .unwrap();
+    event_context
+        .observe_property(PAUSE, Format::Flag, 1)
+        .unwrap();
+    event_context
+        .observe_property(SHUFFLE, Format::Flag, 2)
+        .unwrap();
+    event_context
+        .observe_property(LOOP_FILE, Format::String, 3)
+        .unwrap();
+    event_context
+        .observe_property(LOOP_PLAYLIST, Format::String, 4)
+        .unwrap();
+    event_context
+        .observe_property(DURATION, Format::Double, 5)
+        .unwrap();
+
+    // Start a thread that continually checks the event queue
+    std::thread::spawn(move || {
+        loop {
+            let event = event_context.wait_event(f64::MAX);
+            if let Some(Ok(event)) = event {
+                let use_me = EVENT_CHANNEL.send(event.into());
             }
-            PlayerMessage::PlayRandom => {
-                self.lib_mpv
-                    .command(
-                        "loadfile",
-                        &["https://www.youtube.com/watch?v=xe3Wkzc0O3k&list=RDxe3Wkzc0O3k"],
-                    )
-                    .unwrap();
-            }
-            PlayerMessage::EventOccurred => todo!(),
         }
-    }
+    });
 
-    /// Renders the model after each update
-    pub fn view(&self) -> Element<'_, PlayerMessage> {
-        const BUTTON_SIZE: u32 = 20;
+    // Reset state
+    mpv.set_property(LOOP_FILE, "no");
+    mpv.set_property(LOOP_PLAYLIST, "no");
 
-        let time_pos: f64 = self.lib_mpv.get_property("time-pos").unwrap_or_default();
-        let duration: f64 = self.lib_mpv.get_property("duration").unwrap_or_default();
+    mpv
+}
 
-        let player_button = |content| {
-            widget::button(content)
-                .padding(8)
-                .style(|_, _| widget::button::Style {
-                    border: Border {
-                        radius: Radius::new(2),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                })
+#[derive(Clone, Debug)]
+pub enum Message {
+    /// (Un)pauses the player
+    Pause(bool),
+    /// Seek to a specific time in seconds
+    Seek(f64),
+    /// Stop playback and clear playlist.
+    Stop,
+    /// Plays a track
+    /// This clears the queue and plays just that track
+    Play(Url),
+    PlayAll(Vec<Url>),
+    /// Adds some songs to the queue
+    Append(Url),
+    AppendAll(Vec<Url>),
+    /// Remove a track from the queue
+    QueueRemove(usize),
+    /// Move a track in the queue
+    ///
+    /// Moves a target track in the queue before the position of another one
+    QueueMove {
+        target: usize,
+        position: usize,
+    },
+    Shuffle(bool),
+    /// Changes the repeat mode of the player
+    ChangeRepeatMode(RepeatMode),
+    /// Plays the next song
+    Next,
+    /// Plays the previous song
+    Previous,
+    /// An event occurred
+    Event(MpvEvent),
+}
+
+pub mod command {
+    /// https://mpv.io/manual/master/#command-interface-seek-%3Ctarget%3E-[%3Cflags%3E]
+    pub const SEEK: &str = "seek";
+    /// https://mpv.io/manual/master/#command-interface-[%3Coptions%3E]]]
+    pub const LOADFILE: &str = "loadfile";
+    /// https://mpv.io/manual/master/#command-interface-stop-[%3Cflags%3E]
+    pub const STOP: &str = "stop";
+    /// https://mpv.io/manual/master/#command-interface-playlist-remove
+    pub const PLAYLIST_REMOVE: &str = "playlist-remove";
+    /// https://mpv.io/manual/master/#command-interface-playlist-next
+    pub const PLAYLIST_NEXT: &str = "playlist-next";
+    /// https://mpv.io/manual/master/#command-interface-playlist-prev
+    pub const PLAYLIST_PREV: &str = "playlist-prev";
+    /// https://mpv.io/manual/master/#command-interface-playlist-move
+    pub const PLAYLIST_MOVE: &str = "playlist-move";
+}
+
+impl Player {
+    pub fn update(&mut self, message: Message) {
+        let res = match message {
+            Message::Pause(pause) => self.mpv.set_property(PAUSE, pause),
+            Message::Seek(seconds) => self.mpv.command(SEEK, &[&seconds.to_string(), "absolute"]),
+            Message::Play(url) => self.mpv.command(LOADFILE, &[url.as_str()]),
+            Message::PlayAll(urls) => {
+                // Play the first append the others
+                for (index, ele) in urls.into_iter().enumerate() {
+                    if index == 0 {
+                        self.update(Message::Play(ele));
+                    } else {
+                        self.update(Message::Append(ele));
+                    }
+                }
+                Ok(())
+            }
+            Message::Append(url) => self.mpv.command(LOADFILE, &["append", url.as_str()]),
+            Message::AppendAll(urls) => {
+                for url in urls {
+                    self.update(Message::Append(url));
+                }
+                Ok(())
+            }
+            Message::Stop => {
+                // https://mpv.io/manual/master/#command-interface-stop-[%3Cflags%3E]
+
+                self.mpv.command(STOP, &[])
+            }
+            Message::QueueRemove(usize) => self.mpv.command(PLAYLIST_REMOVE, &[&usize.to_string()]),
+            Message::Next => self.mpv.command(PLAYLIST_NEXT, &[]),
+            Message::Previous => self.mpv.command(PLAYLIST_PREV, &[]),
+            Message::Event(event) => Ok(()),
+            Message::QueueMove {
+                target: before,
+                position: after,
+            } => self
+                .mpv
+                .command(PLAYLIST_MOVE, &[&before.to_string(), &after.to_string()]),
+            Message::ChangeRepeatMode(mode) => {
+                match mode {
+                    RepeatMode::None => {
+                        self.mpv.set_property(LOOP_FILE, "no");
+                        self.mpv.set_property(LOOP_PLAYLIST, "no");
+                    }
+                    RepeatMode::Song => {
+                        self.mpv.set_property(LOOP_FILE, "inf").unwrap();
+                        self.mpv.set_property(LOOP_PLAYLIST, "no").unwrap();
+                    }
+                    RepeatMode::Queue => {
+                        self.mpv.set_property(LOOP_FILE, "no");
+                        self.mpv.set_property(LOOP_PLAYLIST, "inf");
+                    }
+                }
+                Ok(())
+            }
+            Message::Shuffle(shuffle) => self.mpv.set_property(SHUFFLE, shuffle),
         };
-
-        container(column![
-            // The player buttons
-            container(row![
-                player_button(lucide::square().size(BUTTON_SIZE))
-                    .on_press(PlayerMessage::StopPlayer),
-                player_button(lucide::shuffle().size(BUTTON_SIZE)),
-                player_button(lucide::skip_back().size(BUTTON_SIZE)),
-                player_button(lucide::play().size(BUTTON_SIZE)),
-                player_button(lucide::skip_forward().size(BUTTON_SIZE)),
-                player_button(lucide::repeat().size(BUTTON_SIZE)),
-                player_button(lucide::dice_five().size(BUTTON_SIZE))
-                    .on_press(PlayerMessage::PlayRandom)
-            ])
-            .width(Length::Fill)
-            .align_x(Horizontal::Center),
-            // The progress bar
-            container(
-                container(
-                    row![
-                        // Current pos label
-                        iced::widget::text(format_duration(time_pos)),
-                        // Seeking slider
-                        iced::widget::slider(
-                            0.0..=duration,
-                            self.progress,
-                            PlayerMessage::UpdateProgress
-                        ),
-                        // Total duration
-                        iced::widget::text(format_duration(duration)),
-                    ]
-                    .spacing(8)
-                )
-                .max_width(800)
-            )
-            .width(Length::Fill)
-            .align_x(Horizontal::Center),
-        ])
-        .padding(10)
-        .width(Length::Fill)
-        .height(86)
-        .align_x(Horizontal::Center)
-        .align_y(Vertical::Center)
-        .style(container::rounded_box)
-        .into()
     }
 
-    fn subscription(&self) -> Subscription<PlayerMessage> {
-        todo!()
+    pub fn subscription() -> Subscription<Message> {
+        fn subscribe_mpv_events() -> impl Stream<Item = MpvEvent> {
+            use tokio_stream::StreamExt;
+
+            let stream = EVENT_CHANNEL.subscribe();
+            BroadcastStream::new(stream).filter_map(Result::ok)
+        }
+
+        Subscription::run(subscribe_mpv_events).map(Message::Event)
     }
 }

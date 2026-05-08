@@ -1,7 +1,12 @@
 use iced::{
-    ContentFit, Element, Length::Fill, Size, Task, task::{self}, widget::{
-        self, image::{self},
-    }
+    ContentFit, Element,
+    Length::{self, Fill},
+    Size, Task,
+    task::{self},
+    widget::{
+        self,
+        image::{self},
+    },
 };
 use iced_fonts::lucide;
 use serde::Deserialize;
@@ -84,15 +89,24 @@ impl Manager {
 /// An ImageSize implementer can be passed to the Image as a generic
 #[derive(Debug, Clone)]
 pub struct Image {
+    /// The Url of this image
+    /// TODO: Add a global Handle cache for Urls that are the same.
     url: Url,
-    /// The last max size of the image
-    size: Size<u32>,
-    /// When the image has become visible
-    /// We use this to debounce the visibility
+    /// TODO:
+    /// The preferred height of the image
+    height: Option<Length>,
+    /// TODO:
+    /// The preferred width of the image
+    width: Option<Length>,
+    /// TODO:
+    /// An aspect ratio determining width/height
+    aspect_ratio: Option<f32>,
+    /// The size of the image container
+    container_size: Size<u32>,
+    /// Duration to wait before registering image visibility
     debounce: Option<Duration>,
     /// The images blur hash (if any)
     blurhash: Option<String>,
-    /// An image resizer if the endpoint supports auto sizing
     image_resizer: Option<Endpoint>,
     /// The currently allocated image data (if any)
     status: Option<Content>,
@@ -129,7 +143,7 @@ impl Image {
             url: url.into(),
             blurhash: None,
             image_resizer: None,
-            size: Size {
+            container_size: Size {
                 width: 16,
                 height: 16,
             },
@@ -137,6 +151,9 @@ impl Image {
             debounce: None,
             _download_task: None,
             _blurhash_task: None,
+            height: None,
+            width: None,
+            aspect_ratio: None,
         }
     }
 
@@ -146,7 +163,7 @@ impl Image {
         self
     }
 
-    /// Activates automatic sizing 
+    /// Activates automatic sizing
     pub fn autosized(mut self, endpoint: Endpoint) -> Self {
         self.image_resizer = Some(endpoint);
         self
@@ -165,7 +182,7 @@ impl Image {
     }
 
     /// Debounces the visibility of the image
-    /// 
+    ///
     /// This can be used together with [`Image::pre_decode_blurhash`] to immediately
     /// show a blurhash but only start fetching the actual image once it has been
     /// visible for a certain amount of time.
@@ -173,8 +190,9 @@ impl Image {
         self.debounce = Some(duration);
         self
     }
+}
 
-
+impl Image {
     pub fn view<'a>(&'a self) -> Element<'a, IMessage> {
         let image: Element<'_, IMessage> = match &self.status {
             Some(Content::Blurhash(handle)) | Some(Content::Full(handle)) => {
@@ -245,8 +263,8 @@ impl Image {
                 // If auto sizing is active and the new resolution has greater dimensions
                 // then redownload the new resolution
                 if self.image_resizer.is_some()
-                    && size.width > self.size.width as f32
-                    && size.height > self.size.height as f32
+                    && size.width > self.container_size.width as f32
+                    && size.height > self.container_size.height as f32
                 {
                     match &self.blurhash {
                         // Either just download
@@ -324,7 +342,7 @@ impl Image {
     fn download_task(&mut self) -> Task<IMessage> {
         let Self {
             url,
-            size,
+            container_size: size,
             image_resizer,
             _download_task,
             ..
@@ -360,7 +378,7 @@ impl Image {
 
     fn blurhash_task(&mut self) -> Task<IMessage> {
         let Self {
-            size,
+            container_size: size,
             blurhash,
             _blurhash_task,
             ..

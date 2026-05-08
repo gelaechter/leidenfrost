@@ -1,8 +1,9 @@
 pub mod app;
-pub mod player;
+pub mod playerbar;
 pub mod components;
 pub mod router;
 pub mod routes;
-pub mod util;
 pub mod sidebar;
 pub mod queue;
+pub mod settings;
+pub mod player;
