@@ -19,12 +19,11 @@ use crate::backend::{
 };
 
 pub trait Normalize<T, R>: Sized + ApiContract {
-    #[must_use]
     fn normalize(&self, value: T) -> R;
 }
 
 /// Short form of `unwrap_or_default` for `Option<Vec<T>>`
-///  - None -> Vec::new()
+///  - None -> `Vec::new()`
 ///  - Some(vec) -> vec
 trait WithOrEmpty<T> {
     fn or_empty(self) -> Vec<T>;
@@ -37,7 +36,7 @@ impl<T> WithOrEmpty<T> for Option<Vec<T>> {
 }
 
 /// Short form of `unwrap_or_default` for `Option<&Vec<T>>`
-///  - None -> Vec::new()
+///  - None -> `Vec::new()`
 ///  - Some(vec) -> vec
 trait OrEmptySlice<T> {
     fn or_empty(&self) -> &[T];
@@ -45,7 +44,7 @@ trait OrEmptySlice<T> {
 
 impl<T> OrEmptySlice<T> for Option<&Vec<T>> {
     fn or_empty(&self) -> &[T] {
-        self.map(|v| v.as_slice()).unwrap_or(&[])
+        self.map_or(&[], Vec::as_slice)
     }
 }
 
@@ -80,7 +79,8 @@ impl Normalize<BaseItemDto, TrackView> for JellyfinApi {
         } = user_data.unwrap_or_default();
 
         // Check if our item is actually an audio track
-        // TODO: Should probably be recoverable but since we should deserialize based on BaseItemKind this is fine
+        // TODO: Should probably be recoverable but since we should deserialize based on
+        // BaseItemKind this is fine
         assert!(
             matches!(type_, Some(BaseItemKind::Audio)),
             "Tried to normalize a non BaseItemKind::Audio as a Track"
@@ -191,7 +191,8 @@ impl Normalize<BaseItemDto, PlaylistView> for JellyfinApi {
         let UserItemDataDto { is_favorite, .. } = user_data.unwrap_or_default();
 
         // Check if our item is actually an audio track
-        // TODO: Should probably be recoverable but since we should deserialize based on BaseItemKind this is fine
+        // TODO: Should probably be recoverable but since we should deserialize based on
+        // BaseItemKind this is fine
         assert!(
             matches!(type_, Some(BaseItemKind::Playlist)),
             "Tried to normalize a non BaseItemKind::Playlist as a Playlist"

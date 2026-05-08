@@ -59,8 +59,8 @@ impl Default for App {
             sidebar,
             router,
             queue,
-            player_bar,
             player,
+            player_bar,
         }
     }
 }
@@ -79,7 +79,7 @@ pub enum Message {
     PaneDragged(pane_grid::DragEvent),
     PaneResized(pane_grid::ResizeEvent),
     Sidebar(sidebar::Message),
-    Queue(queue::Message),
+    Queue(Box<queue::Message>),
     Router(router::Message),
     PlayerBar(playerbar::Message),
     KeyboardEvent(keyboard::Event),
@@ -95,7 +95,7 @@ impl App {
             pane_grid(&self.panes, |pane, state, is_maximized| {
                 pane_grid::Content::new(match state {
                     Pane::Sidebar => self.sidebar.view().map(Message::Sidebar),
-                    Pane::Queue => self.queue.view().map(Message::Queue),
+                    Pane::Queue => self.queue.view().map(|m| Message::Queue(Box::new(m))),
                     Pane::Router => self.router.view().map(Message::Router),
                 })
             })
@@ -134,10 +134,10 @@ impl App {
                     task
                 }
             }
-            Message::Queue(queue_message) => {
-                self.queue.update(queue_message);
-                Task::none()
-            }
+            Message::Queue(queue_message) => self
+                .queue
+                .update(*queue_message)
+                .map(|m| Message::Queue(Box::new(m))),
             Message::Router(router_message) => {
                 self.router.update(router_message).map(Message::Router)
             }
@@ -146,13 +146,14 @@ impl App {
                 type BMsg = playerbar::Message;
                 type PMsg = player::Message;
 
+                // Requests coming from the player bar to the player
                 match bar_message {
                     BMsg::Pause(p) => self.player.update(PMsg::Pause(p)),
                     BMsg::FinishSeek(d) => {
                         self.player.update(PMsg::Seek(d));
                         // The player bar also needs this
                         self.player_bar.update(bar_message);
-                    },
+                    }
                     BMsg::Next => self.player.update(PMsg::Next),
                     BMsg::Previous => self.player.update(PMsg::Previous),
                     BMsg::Stop => self.player.update(PMsg::Stop),
@@ -163,7 +164,7 @@ impl App {
                             "file:///mnt/NAS/Samuel/Music/flac/Savant/Vario/05 - Shadow.flac",
                         )
                         .unwrap();
-                        self.player.update(PMsg::Play(url))
+                        self.player.update(PMsg::Play(url));
                     }
                     _ => self.player_bar.update(bar_message),
                 }

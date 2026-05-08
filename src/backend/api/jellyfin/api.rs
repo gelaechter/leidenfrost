@@ -42,7 +42,10 @@ pub struct JellyfinApi {
 impl UserPasswordAuth for JellyfinApi {
     async fn auth_user_password(url: Url, username: String, password: String) -> JellyfinApi {
         let client = reqwest::Client::new();
-        let auth_header = r#"MediaBrowser Client="Randale", Device="Android", DeviceId="aaihsgdfoiuaghsdfuawbfayuzgbsdfufzg", Version="0.0.1""#;
+        let auth_header = r#"MediaBrowser Client="Randale",\
+                                    Device="Android",\
+                                    DeviceId="aaihsgdfoiuaghsdfuawbfayuzgbsdfufzg",\
+                                    Version="0.0.1""#;
 
         let mut headers = HeaderMap::new();
         headers.insert(ACCEPT, "application/json".parse().unwrap());
@@ -147,8 +150,7 @@ impl JellyfinApi {
             RequestError::SerdeError(
                 e.to_string(),
                 format!(
-                    "Couldn't parse server response into JSON from request url {}",
-                    relative_path
+                    "Couldn't parse server response into JSON from request url {relative_path}"
                 ),
                 response.clone(),
             )

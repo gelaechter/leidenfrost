@@ -1,3 +1,6 @@
+#![warn(clippy::pedantic)]
+#![allow(return_self_not_must_use)]
+
 use iced_fonts::LUCIDE_FONT_BYTES;
 
 use crate::ui::app::App;

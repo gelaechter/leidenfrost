@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use ordered_float::OrderedFloat;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
@@ -8,7 +7,7 @@ use serde::Serialize;
 /// Query result container
 /// Returned by the ItemsApi
 /// https://typescript-sdk.jellyfin.org/classes/generated-client.ItemsApi.html#getitems
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct BaseItemDtoQueryResult {
     pub items: Vec<BaseItemDto>,
@@ -16,7 +15,7 @@ pub struct BaseItemDtoQueryResult {
     pub total_record_count: i64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct BaseItemDto {
     pub air_days: Option<Vec<DayOfWeek>>,
@@ -30,8 +29,8 @@ pub struct BaseItemDto {
     pub album_count: Option<i64>,
     pub album_id: Option<String>,
     pub album_primary_image_tag: Option<String>,
-    pub altitude: Option<OrderedFloat<f64>>,
-    pub aperture: Option<OrderedFloat<f64>>,
+    pub altitude: Option<f64>,
+    pub aperture: Option<f64>,
     pub artist_count: Option<i64>,
     pub artist_items: Option<Vec<NameGuidPair>>,
     pub artists: Option<Vec<String>>,
@@ -50,10 +49,10 @@ pub struct BaseItemDto {
     pub chapters: Option<Vec<ChapterInfo>>,
     pub child_count: Option<i64>,
     pub collection_type: Option<CollectionType>,
-    pub community_rating: Option<OrderedFloat<f64>>,
-    pub completion_percentage: Option<OrderedFloat<f64>>,
+    pub community_rating: Option<f64>,
+    pub completion_percentage: Option<f64>,
     pub container: Option<String>,
-    pub critic_rating: Option<OrderedFloat<f64>>,
+    pub critic_rating: Option<f64>,
     pub cumulative_run_time_ticks: Option<i64>,
     pub current_program: Option<Box<BaseItemDto>>,
     pub custom_rating: Option<String>,
@@ -66,10 +65,10 @@ pub struct BaseItemDto {
     pub episode_count: Option<i64>,
     pub episode_title: Option<String>,
     pub etag: Option<String>,
-    pub exposure_time: Option<OrderedFloat<f64>>,
+    pub exposure_time: Option<f64>,
     pub external_urls: Option<Vec<ExternalUrl>>,
     pub extra_type: Option<ExtraType>,
-    pub focal_length: Option<OrderedFloat<f64>>,
+    pub focal_length: Option<f64>,
     pub forced_sort_name: Option<String>,
     pub genre_items: Option<Vec<NameGuidPair>>,
     pub genres: Option<Vec<String>>,
@@ -88,19 +87,19 @@ pub struct BaseItemDto {
     pub is_live: Option<bool>,
     pub is_movie: Option<bool>,
     pub is_news: Option<bool>,
-    pub iso_speed_rating: Option<OrderedFloat<f64>>,
+    pub iso_speed_rating: Option<f64>,
     pub iso_type: Option<IsoType>,
     pub is_place_holder: Option<bool>,
     pub is_premiere: Option<bool>,
     pub is_repeat: Option<bool>,
     pub is_series: Option<bool>,
     pub is_sports: Option<bool>,
-    pub latitude: Option<OrderedFloat<f64>>,
+    pub latitude: Option<f64>,
     pub local_trailer_count: Option<i64>,
     pub location_type: Option<LocationType>,
     pub lock_data: Option<bool>,
     pub locked_fields: Option<Vec<MetadataField>>,
-    pub longitude: Option<OrderedFloat<f64>>,
+    pub longitude: Option<f64>,
     pub media_source_count: Option<i64>,
     pub media_sources: Option<Vec<MediaSourceInfo>>,
     pub media_streams: Option<Vec<MediaStream>>,
@@ -108,7 +107,7 @@ pub struct BaseItemDto {
     pub movie_count: Option<i64>,
     pub music_video_count: Option<i64>,
     pub name: Option<String>,
-    pub normalization_gain: Option<OrderedFloat<f64>>,
+    pub normalization_gain: Option<f64>,
     pub number: Option<String>,
     pub official_rating: Option<String>,
     pub original_title: Option<String>,
@@ -133,7 +132,7 @@ pub struct BaseItemDto {
     pub preferred_metadata_country_code: Option<String>,
     pub preferred_metadata_language: Option<String>,
     pub premiere_date: Option<String>,
-    pub primary_image_aspect_ratio: Option<OrderedFloat<f64>>,
+    pub primary_image_aspect_ratio: Option<f64>,
     pub production_locations: Option<Vec<String>>,
     pub production_year: Option<i64>,
     pub program_count: Option<i64>,
@@ -153,7 +152,7 @@ pub struct BaseItemDto {
     pub series_thumb_image_tag: Option<String>,
     pub series_timer_id: Option<String>,
     pub server_id: Option<String>,
-    pub shutter_speed: Option<OrderedFloat<f64>>,
+    pub shutter_speed: Option<f64>,
     pub software: Option<String>,
     pub song_count: Option<i64>,
     pub sort_name: Option<String>,
@@ -174,7 +173,7 @@ pub struct BaseItemDto {
     pub width: Option<i64>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum DayOfWeek {
     Friday,
     Monday,
@@ -185,14 +184,14 @@ pub enum DayOfWeek {
     Wednesday,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct NameGuidPair {
     pub id: String,
     pub name: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ProgramAudio {
     Atmos,
     Dolby,
@@ -202,13 +201,13 @@ pub enum ProgramAudio {
     Thx,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ChannelType {
     Radio,
     Tv,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct ChapterInfo {
     pub image_date_modified: Option<String>,
@@ -218,7 +217,7 @@ pub struct ChapterInfo {
     pub start_position_ticks: Option<i64>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum CollectionType {
     Books,
     Boxsets,
@@ -235,14 +234,14 @@ pub enum CollectionType {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct ExternalUrl {
     pub name: Option<String>,
     pub url: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ExtraType {
     BehindTheScenes,
     Clip,
@@ -258,7 +257,7 @@ pub enum ExtraType {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct BaseItemDtoImageBlurHashes {
     #[serde(default, deserialize_with = "blur_entries_from_map")]
@@ -289,7 +288,7 @@ pub struct BaseItemDtoImageBlurHashes {
     pub thumb: Option<Vec<ImageBlurHash>>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ImageOrientation {
     BottomLeft,
     BottomRight,
@@ -301,13 +300,13 @@ pub enum ImageOrientation {
     TopRight,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum IsoType {
     BluRay,
     Dvd,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum LocationType {
     FileSystem,
     Offline,
@@ -315,7 +314,7 @@ pub enum LocationType {
     Virtual,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum MetadataField {
     Cast,
     Genres,
@@ -328,7 +327,7 @@ pub enum MetadataField {
     Tags,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct MediaSourceInfo {
     pub analyze_duration_ms: Option<i64>,
@@ -378,12 +377,12 @@ pub struct MediaSourceInfo {
     pub video_type: Option<VideoType>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct MediaStream {
     pub aspect_ratio: Option<String>,
     pub audio_spatial_format: Option<AudioSpatialFormat>,
-    pub average_frame_rate: Option<OrderedFloat<f64>>,
+    pub average_frame_rate: Option<f64>,
     pub bit_depth: Option<i64>,
     pub bit_rate: Option<i64>,
     pub bl_present_flag: Option<i64>,
@@ -419,7 +418,7 @@ pub struct MediaStream {
     pub is_interlaced: Option<bool>,
     pub is_text_subtitle_stream: Option<bool>,
     pub language: Option<String>,
-    pub level: Option<OrderedFloat<f64>>,
+    pub level: Option<f64>,
     pub localized_default: Option<String>,
     pub localized_external: Option<String>,
     pub localized_forced: Option<String>,
@@ -430,8 +429,8 @@ pub struct MediaStream {
     pub path: Option<String>,
     pub pixel_format: Option<String>,
     pub profile: Option<String>,
-    pub real_frame_rate: Option<OrderedFloat<f64>>,
-    pub reference_frame_rate: Option<OrderedFloat<f64>>,
+    pub real_frame_rate: Option<f64>,
+    pub reference_frame_rate: Option<f64>,
     pub ref_frames: Option<i64>,
     pub rotation: Option<i64>,
     pub rpu_present_flag: Option<i64>,
@@ -447,7 +446,7 @@ pub struct MediaStream {
     pub width: Option<i64>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum MediaType {
     Audio,
     Book,
@@ -456,7 +455,7 @@ pub enum MediaType {
     Video,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct BaseItemPerson {
     pub id: Option<String>,
@@ -467,20 +466,20 @@ pub struct BaseItemPerson {
     pub type_: Option<PersonKind>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum PlayAccess {
     Full,
     None,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct MediaUrl {
     pub name: Option<String>,
     pub url: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct TrickplayInfoDto {
     pub bandwidth: Option<i64>,
@@ -492,7 +491,7 @@ pub struct TrickplayInfoDto {
     pub width: Option<i64>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum BaseItemKind {
     AggregateFolder,
     Audio,
@@ -533,7 +532,7 @@ pub enum BaseItemKind {
     Year,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct UserItemDataDto {
     pub is_favorite: Option<bool>,
@@ -544,12 +543,12 @@ pub struct UserItemDataDto {
     pub playback_position_ticks: Option<i64>,
     pub play_count: Option<i64>,
     pub played: Option<bool>,
-    pub played_percentage: Option<OrderedFloat<f64>>,
-    pub rating: Option<OrderedFloat<f64>>,
+    pub played_percentage: Option<f64>,
+    pub rating: Option<f64>,
     pub unplayed_item_count: Option<i64>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Video3DFormat {
     FullSideBySide,
     FullTopAndBottom,
@@ -558,7 +557,7 @@ pub enum Video3DFormat {
     Mvc,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum VideoType {
     BluRay,
     Dvd,
@@ -566,7 +565,7 @@ pub enum VideoType {
     VideoFile,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum MediaProtocol {
     File,
     Ftp,
@@ -577,7 +576,7 @@ pub enum MediaProtocol {
     Udp,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct MediaAttachment {
     pub codec: Option<String>,
@@ -589,34 +588,34 @@ pub struct MediaAttachment {
     pub mime_type: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum TransportStreamTimestamp {
     None,
     Valid,
     Zero,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum MediaStreamProtocol {
     Hls,
     Http,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum MediaSourceType {
     Default,
     Grouping,
     Placeholder,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum AudioSpatialFormat {
     DolbyAtmos,
     Dtsx,
     None,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum SubtitleDeliveryMethod {
     Drop,
     Embed,
@@ -625,7 +624,7 @@ pub enum SubtitleDeliveryMethod {
     Hls,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum MediaStreamType {
     Audio,
     Data,
@@ -635,14 +634,14 @@ pub enum MediaStreamType {
     Video,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum VideoRange {
     Hdr,
     Sdr,
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum VideoRangeType {
     Dovi,
     DoviInvalid,
@@ -659,7 +658,7 @@ pub enum VideoRangeType {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct BaseItemPersonImageBlurHashes {
     #[serde(default, deserialize_with = "blur_entries_from_map")]
@@ -690,7 +689,7 @@ pub struct BaseItemPersonImageBlurHashes {
     pub thumb: Option<Vec<ImageBlurHash>>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub enum PersonKind {
     Actor,
@@ -721,7 +720,7 @@ pub enum PersonKind {
 }
 
 // This one doesn't need a pascal case since its not actually provided by Jellyfin
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ImageBlurHash {
     pub id: String,
     pub blurhash: String,
@@ -741,7 +740,7 @@ where
     }))
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Debug, Hash)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct BaseItemImageTags {
     pub art: Option<String>,

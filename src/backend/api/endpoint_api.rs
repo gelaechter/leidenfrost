@@ -16,12 +16,6 @@ pub enum Endpoint {
     // Subsonic
 }
 
-/// An API that supports multiple users
-// pub trait MultiUsers {
-//     /// Fetches all available users
-//     fn get_users(&self, url: Url) -> impl std::future::Future<Output = Vec<User>> + Send;
-// }
-
 pub trait Pagination {
     /// Limit the amounts of items retrieved by specifying:
     ///   - `start`: the starting index of the fetch (i.e. skip the first n items)

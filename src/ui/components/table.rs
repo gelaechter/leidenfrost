@@ -29,7 +29,8 @@ pub struct Table<T, M> {
     /// These act as state, meaning every cell in a row shares one state
     rows: Vec<Row<T>>,
     /// The table columns
-    /// These dictate view, they define multiple ways to draw the state (the rows)
+    /// These dictate view, they define multiple ways to draw the state (the
+    /// rows)
     columns: Vec<Column<T, M>>,
     /// The current mouse position
     mouse_position: Point,
@@ -60,23 +61,33 @@ impl<T, M> Default for Table<T, M> {
 
 impl<T, M> Table<T, M> {
     /// Grants a view into the data the table contains
-    pub fn data(&self) -> Vec<&T> {
-        self.rows.iter().map(|r| &r.item).collect()
+    pub fn rows(&self) -> &Vec<Row<T>> {
+        &self.rows
     }
 
     /// Grants a mutable view into the data the table contains
-    pub fn data_mut(&mut self) -> Vec<&mut T> {
-        self.rows.iter_mut().map(|r| &mut r.item).collect()
+    pub fn rows_mut(&mut self) -> &mut Vec<Row<T>> {
+        &mut self.rows
+    }
+
+    /// Clears the table data
+    pub fn clear(&mut self) {
+        self.rows.clear();
+    }
+
+    /// Adds a datum to the table
+    pub fn push(&mut self, data: T) {
+        self.rows.push(Row::new(data));
     }
 
     /// Extends the table data
-    pub fn extend_rows(&mut self, rows: Vec<T>) {
+    pub fn extend(&mut self, rows: Vec<T>) {
         let rows: Vec<Row<T>> = rows.into_iter().map(Row::new).collect();
         self.rows.extend(rows);
     }
 
     /// Adds an additional column to the table
-    pub fn column(mut self, column: Column<T, M>) -> Self {
+    pub fn add_column(mut self, column: Column<T, M>) -> Self {
         self.columns.push(column);
         self
     }
@@ -191,7 +202,7 @@ pub enum Message<M: Clone> {
     RowShown(usize),
     RowHidden(usize),
     /// Driver for column content
-    ColumnDriver(RowId, ColId, M),
+    ColumnDriver(usize, usize, M),
     /// Mouse events
     MouseMoved(Point),
     MousePressed,
@@ -246,20 +257,12 @@ where
                 self.rows[row_idx].visible = false;
                 Task::none()
             }
-            Message::ColumnDriver(row_id, col_id, message) => {
-                // TODO: atrocious approach for indexing
-                // Either use hashmaps or just use the actual indices
-                let row = self.rows.iter_mut().find(|r| r.id == row_id);
-                let col = self.columns.iter_mut().find(|c| c.id == col_id);
+            Message::ColumnDriver(row_idx, col_id, message) => {
+                let row = &mut self.rows[row_idx];
+                let col = &self.columns[col_id];
 
-                if let Some(row) = row
-                    && let Some(col) = col
-                {
-                    (col.update)(&mut row.item, message)
-                        .map(move |m| Message::ColumnDriver(row_id, col_id, m))
-                } else {
-                    Task::none()
-                }
+                (col.update)(&mut row.item, message)
+                    .map(move |m| Message::ColumnDriver(row_idx, col_id, m))
             }
             Message::None => Task::none(),
             Message::MouseMoved(position) => {
@@ -304,7 +307,8 @@ where
                     col.width = Fixed(col.measured_width)
                 }
 
-                // Let the last column fill the rest of the space left when resizing the second-to-last column
+                // Let the last column fill the rest of the space left when resizing the
+                // second-to-last column
                 if resizing_col == self.columns.len() - 2
                     && let Some(col) = self.columns.last_mut()
                 {
@@ -460,12 +464,10 @@ where
 
     /// A row showing all the columns for an item T
     pub fn item_row<'a>(&self, row_idx: usize, row: &'a Row<T>) -> Element<'a, Message<M>> {
-        let columns = self.columns.iter().map(move |col| {
-            widget::container((col.view)(&row.item).map({
-                let row_id = row.id;
-                let col_id = col.id;
-                move |m| Message::ColumnDriver(row_id, col_id, m)
-            }))
+        let columns = self.columns.iter().enumerate().map(|(col_idx, col)| {
+            widget::container(
+                (col.view)(&row.item).map(move |m| Message::ColumnDriver(row_idx, col_idx, m)),
+            )
             .width(col.measured_width - 2.0)
             .height(ROW_HEIGHT)
             .padding(Padding::new(8.0))
@@ -475,7 +477,7 @@ where
             .into()
         });
 
-        // Row button allowing
+        // Row button allowing selection
         widget::button(widget::row(columns).width(Fill))
             .style({
                 let selected = row.selected;

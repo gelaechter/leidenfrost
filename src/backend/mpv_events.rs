@@ -45,7 +45,7 @@ pub enum MpvValue {
 }
 
 impl From<libmpv2::events::Event<'_>> for MpvEvent {
-    /// Convert Event<'a> -> MpvEvent
+    /// Convert Event<'a> -> `MpvEvent`
     fn from(event: libmpv2::events::Event<'_>) -> Self {
         match event {
             libmpv2::events::Event::Shutdown => MpvEvent::Shutdown,
@@ -75,7 +75,7 @@ impl From<libmpv2::events::Event<'_>> for MpvEvent {
             libmpv2::events::Event::EndFile(reason) => MpvEvent::EndFile(reason),
             libmpv2::events::Event::FileLoaded => MpvEvent::FileLoaded,
             libmpv2::events::Event::ClientMessage(args) => {
-                MpvEvent::ClientMessage(args.into_iter().map(|s| s.to_string()).collect())
+                MpvEvent::ClientMessage(args.into_iter().map(ToString::to_string).collect())
             }
             libmpv2::events::Event::VideoReconfig => MpvEvent::VideoReconfig,
             libmpv2::events::Event::AudioReconfig => MpvEvent::AudioReconfig,
@@ -99,8 +99,9 @@ impl From<libmpv2::events::Event<'_>> for MpvEvent {
 impl From<libmpv2::events::PropertyData<'_>> for MpvValue {
     fn from(data: libmpv2::events::PropertyData<'_>) -> Self {
         match data {
-            libmpv2::events::PropertyData::Str(s) => MpvValue::String(s.to_string()),
-            libmpv2::events::PropertyData::OsdStr(s) => MpvValue::String(s.to_string()),
+            libmpv2::events::PropertyData::Str(s) | libmpv2::events::PropertyData::OsdStr(s) => {
+                MpvValue::String(s.to_string())
+            }
             libmpv2::events::PropertyData::Double(f) => MpvValue::F64(f),
             libmpv2::events::PropertyData::Int64(i) => MpvValue::I64(i),
             libmpv2::events::PropertyData::Flag(b) => MpvValue::Bool(b),

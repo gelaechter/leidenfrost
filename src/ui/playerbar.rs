@@ -99,7 +99,6 @@ impl PlayerBar {
 
         let player_button = |content| {
             widget::button(content)
-                .padding(8)
                 .style(|_, _| widget::button::Style {
                     border: Border {
                         radius: Radius::new(2),
@@ -140,7 +139,9 @@ impl PlayerBar {
                 player_button(
                     match self.repeat_mode {
                         RepeatMode::None => lucide::repeat(),
-                        RepeatMode::Song => lucide::repeat_one(),
+                        RepeatMode::Song => lucide::repeat_one().style(|t: &iced::Theme| Style {
+                            color: Some(t.palette().primary.strong.color),
+                        }),
                         RepeatMode::Queue => lucide::repeat().style(|t: &iced::Theme| Style {
                             color: Some(t.palette().primary.strong.color),
                         }),
@@ -149,9 +150,9 @@ impl PlayerBar {
                 )
                 .on_press(Message::Repeat(match self.repeat_mode {
                     // Cycle repeat mode
-                    RepeatMode::None => RepeatMode::Song,
-                    RepeatMode::Song => RepeatMode::Queue,
-                    RepeatMode::Queue => RepeatMode::None,
+                    RepeatMode::None => RepeatMode::Queue,
+                    RepeatMode::Queue => RepeatMode::Song,
+                    RepeatMode::Song => RepeatMode::None,
                 }))
                 .into(),
                 player_button(lucide::dice_five().size(BUTTON_SIZE))

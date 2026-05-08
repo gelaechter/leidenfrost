@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use futures::Stream;
+use iced::futures::Stream;
 use iced::Subscription;
 use libmpv2::{Format, Mpv};
 use tokio::sync::broadcast;
@@ -49,20 +49,20 @@ impl Default for Player {
     }
 }
 
-/// Mpv properties (https://mpv.io/manual/master/#properties) \
+/// Mpv properties (<https://mpv.io/manual/master/#properties>) \
 /// These can be inspected in the MPV GUI using `g-r`
 pub mod property {
-    /// https://mpv.io/manual/master/#command-interface-time-pos
+    /// <https://mpv.io/manual/master/#command-interface-time-pos>
     pub const TIME_POS: &str = "time-pos";
     /// If the player is currently paused
     pub const PAUSE: &str = "pause";
     /// If shuffle is active
     pub const SHUFFLE: &str = "shuffle";
-    /// https://mpv.io/manual/master/#options-loop
+    /// <https://mpv.io/manual/master/#options-loop>
     pub const LOOP_FILE: &str = "loop-file";
-    /// https://mpv.io/manual/master/#options-loop-playlist
+    /// <https://mpv.io/manual/master/#options-loop-playlist>
     pub const LOOP_PLAYLIST: &str = "loop-playlist";
-    /// https://mpv.io/manual/master/#command-interface-duration
+    /// <https://mpv.io/manual/master/#command-interface-duration>
     pub const DURATION: &str = "duration";
 }
 
@@ -107,7 +107,7 @@ fn initialize_mpv() -> Mpv {
         loop {
             let event = event_context.wait_event(f64::MAX);
             if let Some(Ok(event)) = event {
-                let use_me = EVENT_CHANNEL.send(event.into());
+                EVENT_CHANNEL.send(event.into());
             }
         }
     });
@@ -127,11 +127,10 @@ pub enum Message {
     Seek(f64),
     /// Stop playback and clear playlist.
     Stop,
-    /// Plays a track
-    /// This clears the queue and plays just that track
+    /// Clears the queue and plays just that track
     Play(Url),
     PlayAll(Vec<Url>),
-    /// Adds some songs to the queue
+    /// Adds some tracks to the queue
     Append(Url),
     AppendAll(Vec<Url>),
     /// Remove a track from the queue
@@ -155,19 +154,19 @@ pub enum Message {
 }
 
 pub mod command {
-    /// https://mpv.io/manual/master/#command-interface-seek-%3Ctarget%3E-[%3Cflags%3E]
+    /// <https://mpv.io/manual/master/#command-interface-seek-%3Ctarget%3E-[%3Cflags%3E]>
     pub const SEEK: &str = "seek";
-    /// https://mpv.io/manual/master/#command-interface-[%3Coptions%3E]]]
+    /// <https://mpv.io/manual/master/#command-interface-[%3Coptions%3E]]]>
     pub const LOADFILE: &str = "loadfile";
-    /// https://mpv.io/manual/master/#command-interface-stop-[%3Cflags%3E]
+    /// <https://mpv.io/manual/master/#command-interface-stop-[%3Cflags%3E]>
     pub const STOP: &str = "stop";
-    /// https://mpv.io/manual/master/#command-interface-playlist-remove
+    /// <https://mpv.io/manual/master/#command-interface-playlist-remove>
     pub const PLAYLIST_REMOVE: &str = "playlist-remove";
-    /// https://mpv.io/manual/master/#command-interface-playlist-next
+    /// <https://mpv.io/manual/master/#command-interface-playlist-next>
     pub const PLAYLIST_NEXT: &str = "playlist-next";
-    /// https://mpv.io/manual/master/#command-interface-playlist-prev
+    /// <https://mpv.io/manual/master/#command-interface-playlist-prev>
     pub const PLAYLIST_PREV: &str = "playlist-prev";
-    /// https://mpv.io/manual/master/#command-interface-playlist-move
+    /// <https://mpv.io/manual/master/#command-interface-playlist-move>
     pub const PLAYLIST_MOVE: &str = "playlist-move";
 }
 
@@ -195,11 +194,7 @@ impl Player {
                 }
                 Ok(())
             }
-            Message::Stop => {
-                // https://mpv.io/manual/master/#command-interface-stop-[%3Cflags%3E]
-
-                self.mpv.command(STOP, &[])
-            }
+            Message::Stop => self.mpv.command(STOP, &[]),
             Message::QueueRemove(usize) => self.mpv.command(PLAYLIST_REMOVE, &[&usize.to_string()]),
             Message::Next => self.mpv.command(PLAYLIST_NEXT, &[]),
             Message::Previous => self.mpv.command(PLAYLIST_PREV, &[]),
@@ -214,18 +209,17 @@ impl Player {
                 match mode {
                     RepeatMode::None => {
                         self.mpv.set_property(LOOP_FILE, "no");
-                        self.mpv.set_property(LOOP_PLAYLIST, "no");
+                        self.mpv.set_property(LOOP_PLAYLIST, "no")
                     }
                     RepeatMode::Song => {
-                        self.mpv.set_property(LOOP_FILE, "inf").unwrap();
-                        self.mpv.set_property(LOOP_PLAYLIST, "no").unwrap();
+                        self.mpv.set_property(LOOP_FILE, "inf");
+                        self.mpv.set_property(LOOP_PLAYLIST, "no")
                     }
                     RepeatMode::Queue => {
                         self.mpv.set_property(LOOP_FILE, "no");
-                        self.mpv.set_property(LOOP_PLAYLIST, "inf");
+                        self.mpv.set_property(LOOP_PLAYLIST, "inf")
                     }
                 }
-                Ok(())
             }
             Message::Shuffle(shuffle) => self.mpv.set_property(SHUFFLE, shuffle),
         };

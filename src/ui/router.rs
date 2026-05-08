@@ -1,8 +1,8 @@
 use iced::{
-    Element, Length::Fill, Subscription, Task, widget::{
-        self,
-        container::background,
-    }
+    Element,
+    Length::Fill,
+    Task,
+    widget::{self, container::background},
 };
 
 use crate::ui::routes::tracks::{self, Tracks};
@@ -40,10 +40,7 @@ pub enum Message {
 impl Router {
     pub fn view(&self) -> Element<'_, Message> {
         widget::container(match self.route {
-            Route::Home => widget::container("text")
-                .width(Fill)
-                .height(Fill)
-                .into(),
+            Route::Home => widget::container("text").width(Fill).height(Fill).into(),
             Route::Favorites => todo!(),
             Route::Albums => todo!(),
             Route::Tracks => self.tracks.view().map(Message::TracksDriver),

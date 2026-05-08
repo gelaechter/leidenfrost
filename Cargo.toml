@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-futures = "0.3.32"
 iced = { path = "../iced", features = [
     "image",
     "sipper",
@@ -15,15 +14,16 @@ iced = { path = "../iced", features = [
 ] }
 iced_fonts = { path = "../iced_fonts", features = ["lucide"] }
 libmpv2 = "5.0.3"
-tokio = { version = "1.50.0", features = ["full", "test-util", "tracing"] }
+tokio = { version = "1.50.0", features = ["rt"] }
+tokio-stream = { version = "0.1.18", features = ["sync"] }
 serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { package = "serde_json_path_to_error", version = "0.1.5" }
 chrono = { version = "0.4.44", features = ["serde"] }
 url = { version = "2.5.8", features = ["serde"] }
 thiserror = "2.0.18"
 color-eyre = "0.6.5"
 reqwest = { version = "0.13.2", features = ["json", "query"] }
 # https://docs.rs/serde_json_path_to_error
-serde_json = { package = "serde_json_path_to_error", version = "0.1.5" }
 http-serde = "2.1.1"
 blurhash = "0.2.3"
 bytes = "1.11.1"
@@ -34,11 +34,7 @@ sea-orm = { version = "2.0.0-rc.37", features = [
     "schema-sync",
     "entity-registry",
 ] }
-ordered-float = { version = "5.3.0", features = ["serde"] }
 uuid = { version = "1.23.0", features = ["v3", "v4"] }
 log = "0.4.29"
-itertools = "0.14.0"
 env_logger = "0.11.10"
 bon = "3.9.1"
-tokio-stream = { version = "0.1.18", features = ["sync"] }
-# console-subscriber = "0.5.0"

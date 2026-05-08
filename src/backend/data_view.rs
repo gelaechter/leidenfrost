@@ -1,5 +1,4 @@
 use crate::backend::db::models::{Playlist, Track};
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelatedArtist {
     pub id: String,
