@@ -4,16 +4,18 @@ use iced::{
     Border, Color, Element,
     Length::{self, Fill, FillPortion, Fixed, Shrink},
     Padding, Point, Size, Task, Theme,
-    advanced::graphics::futures::MaybeSend,
+    advanced::{graphics::futures::MaybeSend, widget::tree::Tag},
     alignment::{self, Vertical},
     mouse::Interaction,
     widget::{
-        self,
+        self, Id,
         button::{self, Status, Style},
         row,
     },
 };
 use uuid::Uuid;
+
+use crate::ui::components::tagged::{self, tagged};
 
 #[repr(transparent)]
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
@@ -25,6 +27,7 @@ struct RowId(Uuid);
 
 /// A table component
 pub struct Table<T, M> {
+    id: Uuid,
     /// The table rows
     /// These act as state, meaning every cell in a row shares one state
     rows: Vec<Row<T>>,
@@ -55,6 +58,7 @@ impl<T, M> Default for Table<T, M> {
             columns: Default::default(),
             mouse_position: Default::default(),
             resize_info: Default::default(),
+            id: Uuid::new_v4(),
         }
     }
 }
@@ -448,18 +452,19 @@ where
 
             // Wrap the chunk with a sensor to watch if it's visible
             let content = widget::sensor(content)
-                .key(row_idx)
                 .anticipate(ANTICIPATED_CELLS * ROW_HEIGHT)
                 .on_show(move |_| Message::RowShown(row_idx))
                 .on_hide(Message::RowHidden(row_idx))
                 .into();
 
-            (row_idx, content)
+            content
         });
 
-        widget::scrollable(widget::keyed_column(rows))
-            .height(Shrink)
-            .into()
+        let scrollable = widget::scrollable(widget::column(rows))
+            .auto_scroll(true)
+            .height(Shrink);
+
+        tagged(scrollable, Tag::of::<()>()).into()
     }
 
     /// A row showing all the columns for an item T

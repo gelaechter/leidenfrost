@@ -6,7 +6,7 @@ use serde::Serialize;
 
 /// Query result container
 /// Returned by the ItemsApi
-/// https://typescript-sdk.jellyfin.org/classes/generated-client.ItemsApi.html#getitems
+/// <https://typescript-sdk.jellyfin.org/classes/generated-client.ItemsApi.html#getitems>
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "PascalCase", deny_unknown_fields)]
 pub struct BaseItemDtoQueryResult {

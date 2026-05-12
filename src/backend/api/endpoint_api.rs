@@ -2,7 +2,7 @@ use reqwest::RequestBuilder;
 use url::Url;
 
 use crate::backend::{
-    data_view::{PlaylistView, TrackView},
+    data_view::{AlbumView, PlaylistView, TrackView},
     db::models::{Album, Artist, Disc, Genre, Playlist, Track},
 };
 
@@ -56,13 +56,13 @@ pub trait ApiContract {
     async fn get_songs_from_album(&self, album_id: String) -> color_eyre::Result<Vec<Disc>>;
 
     /// Fetches a specific album
-    async fn get_album(&self, album_id: String) -> color_eyre::Result<Album>;
+    async fn get_album(&self, album_id: String) -> color_eyre::Result<AlbumView>;
 
     /// Fetches all albums
-    async fn get_albums(&self) -> color_eyre::Result<Vec<Album>>;
+    async fn get_albums(&self) -> color_eyre::Result<Vec<AlbumView>>;
 
     /// Fetches albums from an artist
-    async fn get_albums_from_artist(&self, artist_id: String) -> color_eyre::Result<Vec<Album>>;
+    async fn get_albums_from_artist(&self, artist_id: String) -> color_eyre::Result<Vec<AlbumView>>;
 
     /// Fetches an artist
     async fn get_artist(&self, artist_id: String) -> color_eyre::Result<Artist>;

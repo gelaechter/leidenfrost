@@ -8,8 +8,6 @@ use iced::{
 };
 use iced_fonts::lucide;
 
-use crate::ui::components::style;
-
 /// The header text of a column used in tables
 pub fn column_header(content: &str) -> widget::Text<'_> {
     widget::text(content.to_uppercase()).ellipsis(widget::text::Ellipsis::End)
@@ -38,16 +36,19 @@ pub fn header_play_button<'a, T: 'a>() -> widget::Button<'a, T> {
 /// A round button usually placed as a header to signify
 /// play everything on this page
 pub fn header_text<'a>(text: impl text::IntoFragment<'a>) -> widget::Text<'a> {
-    widget::text("Tracks").size(36).font(Font {
+    widget::text(text).size(36).font(Font {
         weight: font::Weight::Bold,
         ..Font::DEFAULT
     })
 }
 
-/// The default header for the routes. 
+/// The default header for the routes.
 /// It consists of a large play button ([`header_play_button()`])
 /// and a header text ([`header_text()`])
-pub fn default_header<'a, Msg: Clone + 'a>(text: impl text::IntoFragment<'a>, on_press: Msg) -> Container<'a, Msg> {
+pub fn default_header<'a, Msg: Clone + 'a>(
+    text: impl text::IntoFragment<'a>,
+    on_press: Msg,
+) -> Container<'a, Msg> {
     let tracks_text = header_text(text);
     let play_button = header_play_button().on_press(on_press);
 

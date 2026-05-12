@@ -27,6 +27,7 @@ impl Default for Settings {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum Message {
     OpenSettings(Id),
     ScaleChanged(String),
@@ -54,8 +55,8 @@ impl Settings {
 
     pub fn update(&mut self, message: Message) {
         match message {
-            Message::OpenSettings(id) => todo!(),
-            Message::ScaleChanged(_) => todo!(),
+            Message::OpenSettings(id) =>  {},
+            Message::ScaleChanged(_) => {},
         }
     }
 }

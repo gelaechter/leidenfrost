@@ -1,17 +1,10 @@
 [package]
-name = "randale_iced"
+name = "leidenfrost"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced = { path = "../iced", features = [
-    "image",
-    "sipper",
-    # "debug",
-    # "time-travel", 
-    "tokio",
-    "advanced",
-] }
+iced = { path = "../iced", features = ["image", "sipper", "tokio", "advanced"] }
 iced_fonts = { path = "../iced_fonts", features = ["lucide"] }
 libmpv2 = "5.0.3"
 tokio = { version = "1.50.0", features = ["rt"] }
@@ -38,3 +31,5 @@ uuid = { version = "1.23.0", features = ["v3", "v4"] }
 log = "0.4.29"
 env_logger = "0.11.10"
 bon = "3.9.1"
+mpris-server = "0.10.0"
+zbus = "5.15.0"

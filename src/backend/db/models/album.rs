@@ -24,7 +24,6 @@ pub struct Model {
     pub title: Option<String>,
     pub image_url: Option<OrmUrl>,
     pub image_blur_hash: Option<String>,
-    pub user_rating: Option<i64>,
     pub user_favorite: Option<bool>,
 }
 

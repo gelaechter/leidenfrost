@@ -1,23 +1,19 @@
 use iced::{
-    Element,
-    Length::Fill,
-    Subscription, Task,
-    keyboard::{self, Key, key::Named},
-    widget::{
+    Color, Element, Length::Fill, Subscription, Task, keyboard::{self, Key, key::Named}, widget::{
         column, container,
         pane_grid::{Axis, Configuration, ResizeEvent},
-    },
+    }
 };
 
 use iced::widget::pane_grid;
 use url::Url;
 
 use crate::ui::{
-    player::{self, Player},
+    mpv::{self, Player},
     playerbar::{self, PlayerBar},
     queue::{self, Queue},
     router::{self, Router},
-    settings::Settings,
+    settings::{self, Settings},
     sidebar::{self, Sidebar},
 };
 
@@ -76,14 +72,14 @@ pub enum Pane {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    PaneDragged(pane_grid::DragEvent),
     PaneResized(pane_grid::ResizeEvent),
     Sidebar(sidebar::Message),
     Queue(Box<queue::Message>),
     Router(router::Message),
     PlayerBar(playerbar::Message),
     KeyboardEvent(keyboard::Event),
-    PlayerDriver(player::Message),
+    PlayerDriver(mpv::Message),
+    Settings(settings::Message),
 }
 
 /// The main layout of the application
@@ -99,10 +95,9 @@ impl App {
                     Pane::Router => self.router.view().map(Message::Router),
                 })
             })
-            .on_drag(Message::PaneDragged)
             .on_resize(10, Message::PaneResized),
             // The player bar
-            self.player_bar.view().map(Message::PlayerBar)
+            self.player_bar.view().map(Message::PlayerBar).explain(Color::BLACK)
         ])
         .height(Fill)
         .width(Fill)
@@ -111,29 +106,21 @@ impl App {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::PaneDragged(drag_event) => todo!(),
             Message::PaneResized(ResizeEvent { split, ratio }) => {
                 self.panes.resize(split, ratio);
                 Task::none()
             }
-            Message::Sidebar(sidebar_message) => {
-                //
-                let task: Task<Message> = self
-                    .sidebar
-                    .update(sidebar_message.clone())
-                    .map(Message::Sidebar);
-
-                if let sidebar::Message::UpdateRoute(route) = sidebar_message {
-                    Task::batch([
-                        task,
-                        self.router
-                            .update(router::Message::ChangeRoute(route))
-                            .map(Message::Router),
-                    ])
-                } else {
-                    task
-                }
-            }
+            Message::Sidebar(sidebar_message) => match sidebar_message {
+                // Pass update router upwards
+                sidebar::Message::UpdateRoute(ref route) => Task::batch([
+                    self.router
+                        .update(router::Message::ChangeRoute(route.clone()))
+                        .map(Message::Router),
+                    self.sidebar.update(sidebar_message).map(Message::Sidebar),
+                ]),
+                // Anything else is just sidebar state
+                _ => self.sidebar.update(sidebar_message).map(Message::Sidebar),
+            },
             Message::Queue(queue_message) => self
                 .queue
                 .update(*queue_message)
@@ -144,7 +131,7 @@ impl App {
             // Player bar wiring
             Message::PlayerBar(bar_message) => {
                 type BMsg = playerbar::Message;
-                type PMsg = player::Message;
+                type PMsg = mpv::Message;
 
                 // Requests coming from the player bar to the player
                 match bar_message {
@@ -161,7 +148,7 @@ impl App {
                     BMsg::Repeat(r) => self.player.update(PMsg::ChangeRepeatMode(r)),
                     BMsg::PlayRandom => {
                         let url = Url::parse(
-                            "file:///mnt/NAS/Samuel/Music/flac/Savant/Vario/05 - Shadow.flac",
+                            "file:///mnt/NAS/Samuel/Music/flac/Savant/Alchemist 2/07 - Hungry Eyes.flac",
                         )
                         .unwrap();
                         self.player.update(PMsg::Play(url));
@@ -181,11 +168,15 @@ impl App {
                 _ => Task::none(),
             },
             Message::PlayerDriver(message) => {
-                if let player::Message::Event(event) = &message {
+                if let mpv::Message::Event(event) = &message {
                     self.player_bar
                         .update(playerbar::Message::Event(event.clone()));
                 }
                 self.player.update(message);
+                Task::none()
+            }
+            Message::Settings(message) => {
+                self.settings.update(message);
                 Task::none()
             }
         }

@@ -9,14 +9,10 @@ use crate::{
         endpoint_api::{ApiContract, UserPasswordAuth},
         jellyfin::api::JellyfinApi,
     },
-    ui::{
-        components::{
-            image::{self},
-            style::default_header,
-            table::{self},
-            track_table::{self, TrackCellMsg, TrackRow, TrackTable},
-        },
-        router::Route,
+    ui::components::{
+        style::default_header,
+        table::{self},
+        track_table::{self, TrackCellMsg, TrackRow, TrackTable},
     },
 };
 
@@ -28,7 +24,7 @@ pub struct Tracks {
 
 impl Default for Tracks {
     fn default() -> Self {
-        let track_table = TrackTable::default()
+        let track_table: table::Table<TrackRow, TrackCellMsg> = TrackTable::default()
             .add_column(track_table::index_column())
             .add_column(track_table::combined_title_column())
             .add_column(track_table::album_column())
@@ -51,14 +47,6 @@ pub enum Message {
     PlayAllTracks,
 }
 
-#[derive(Debug, Clone)]
-pub enum CellMessage {
-    /// A driver for images
-    ImageDriver(image::IMessage),
-    /// The route has been changed (e.g. through clicking an album)
-    ChangeRoute(Route),
-}
-
 impl Tracks {
     pub fn view(&self) -> Element<'_, Message> {
         let header = default_header("Tracks", Message::PlayAllTracks);
@@ -67,6 +55,7 @@ impl Tracks {
 
         widget::sensor(tracks)
             .on_show(|_| Message::FetchTracks)
+            .key("tracks")
             .into()
     }
 

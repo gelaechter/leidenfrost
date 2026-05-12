@@ -6,17 +6,15 @@ use crate::backend::{
             normalize::Normalize,
         },
     },
-    data_view::{PlaylistView, TrackView},
+    data_view::{AlbumView, PlaylistView, TrackView},
     db::models::{Album, Artist, Disc, Genre},
 };
-use std::collections::HashSet;
 
 use crate::backend::api::{
     endpoint_api::UserPasswordAuth,
     jellyfin::errors::{ApiError, RequestError},
 };
 
-use iced::task::{Sipper, sipper};
 use reqwest::header::ACCEPT;
 use reqwest::header::AUTHORIZATION;
 use reqwest::header::CONTENT_TYPE;
@@ -42,10 +40,7 @@ pub struct JellyfinApi {
 impl UserPasswordAuth for JellyfinApi {
     async fn auth_user_password(url: Url, username: String, password: String) -> JellyfinApi {
         let client = reqwest::Client::new();
-        let auth_header = r#"MediaBrowser Client="Randale",\
-                                    Device="Android",\
-                                    DeviceId="aaihsgdfoiuaghsdfuawbfayuzgbsdfufzg",\
-                                    Version="0.0.1""#;
+        let auth_header = r#"MediaBrowser Client="Randale",Device="Android",DeviceId="aaihsgdfoiuaghsdfuawbfayuzgbsdfufzg",Version="0.0.1""#;
 
         let mut headers = HeaderMap::new();
         headers.insert(ACCEPT, "application/json".parse().unwrap());
@@ -129,7 +124,7 @@ impl JellyfinApi {
     /// The response is parsed into a json serde value.
     pub async fn request<T>(
         &self,
-        relative_path: String,
+        relative_path: &str,
         query_parameters: &T,
     ) -> Result<Value, ApiError>
     where
@@ -137,8 +132,10 @@ impl JellyfinApi {
     {
         let response = self
             .client
-            .get(self.url.join(&relative_path).unwrap())
+            .get(self.url.join(relative_path).unwrap())
             .headers(self.headers.clone())
+            // See here for query parameters
+            // https://typescript-sdk.jellyfin.org/interfaces/generated-client.ItemsApiGetItemsRequest.html
             .query(query_parameters)
             .send()
             .await?
@@ -159,70 +156,7 @@ impl JellyfinApi {
         Ok(json)
     }
 
-    pub async fn index_data(&self, db: &DatabaseConnection) {
-        let mut sipper = self.fetch_items().pin();
-
-        while let Some(progress) = sipper.sip().await {
-            println!("{progress}%");
-        }
-
-        let types = sipper.await;
-
-        dbg!(types);
-    }
-
-    pub fn fetch_items(&self) -> impl Sipper<HashSet<BaseItemKind>, u64> + '_ {
-        sipper(move |mut sender| async move {
-            let mut types = HashSet::new();
-
-            let json = self
-                .request(
-                    "/Users/07bd2df2d1bf4b51b33082acf300aeba/Items".to_owned(),
-                    &json!({
-                        "Recursive": true,
-                        "IncludeItemTypes": BaseItemKind::Audio,
-                        "Limit": 1
-                    }),
-                )
-                .await
-                .unwrap();
-
-            dbg!(&json);
-
-            let query_result: BaseItemDtoQueryResult = serde_json::from_value(json).unwrap();
-
-            dbg!(&query_result);
-
-            return types;
-
-            const STEP_SIZE: u64 = 100;
-            for index in 0..((query_result.total_record_count as u64).div_ceil(STEP_SIZE)) {
-                let response = self
-                    .request(
-                        "/Users/07bd2df2d1bf4b51b33082acf300aeba/Items".to_owned(),
-                        &[
-                            ("Recursive", "true"),
-                            ("Limit", &STEP_SIZE.to_string()),
-                            ("IncludeItemTypes", "Playlist"),
-                            ("StartIndex", &format!("{}", index * STEP_SIZE)),
-                        ],
-                    )
-                    .await
-                    .unwrap();
-
-                let list: BaseItemDtoQueryResult = serde_json::from_value(response).unwrap();
-                dbg!(&list);
-                for item in list.items {
-                    if let Some(type_) = item.type_ {
-                        types.insert(type_);
-                    }
-                }
-                sender.send(index).await;
-            }
-
-            types
-        })
-    }
+    pub async fn index_data(&self, db: DatabaseConnection) {}
 }
 
 impl ApiContract for JellyfinApi {
@@ -230,22 +164,23 @@ impl ApiContract for JellyfinApi {
         todo!()
     }
 
-    /// TODO: currently doesn't fetch everything?
-    /// or the order is just off
     async fn get_tracks(&self) -> color_eyre::Result<Vec<TrackView>> {
-        let query_result: BaseItemDtoQueryResult = serde_json::from_value(
-            self.request(
-                "/Users/07bd2df2d1bf4b51b33082acf300aeba/Items".to_owned(),
+        let user_id = &self.user_id;
+
+        let query_result = self
+            .request(
+                &format!("/Users/{user_id}/Items"),
                 &json!({
+                    "Fields": "Genres",
                     "Recursive": true,
                     "IncludeItemTypes": BaseItemKind::Audio,
                     "Limit": 100
                 }),
             )
             .await
-            .unwrap(),
-        )
-        .unwrap();
+            .unwrap();
+
+        let query_result: BaseItemDtoQueryResult = serde_json::from_value(query_result).unwrap();
 
         let tracks = query_result
             .items
@@ -260,15 +195,42 @@ impl ApiContract for JellyfinApi {
         todo!()
     }
 
-    async fn get_album(&self, album_id: String) -> color_eyre::Result<Album> {
+    async fn get_album(&self, album_id: String) -> color_eyre::Result<AlbumView> {
         todo!()
     }
 
-    async fn get_albums(&self) -> color_eyre::Result<Vec<Album>> {
-        todo!()
+    /// This returns flat [`AlbumView`] values, these do not contain tracks
+    async fn get_albums(&self) -> color_eyre::Result<Vec<AlbumView>> {
+        let user_id = &self.user_id;
+
+        let query_result = self
+            .request(
+                &format!("/Users/{user_id}/Items"),
+                &json!({
+                    "Fields": "Genres",
+                    "Recursive": true,
+                    "IncludeItemTypes": BaseItemKind::MusicAlbum,
+                    "Limit": 100
+                }),
+            )
+            .await
+            .unwrap();
+
+        let query_result: BaseItemDtoQueryResult = serde_json::from_value(query_result).unwrap();
+
+        let tracks = query_result
+            .items
+            .into_iter()
+            .map(|item| self.normalize(item))
+            .collect();
+
+        Ok(tracks)
     }
 
-    async fn get_albums_from_artist(&self, artist_id: String) -> color_eyre::Result<Vec<Album>> {
+    async fn get_albums_from_artist(
+        &self,
+        artist_id: String,
+    ) -> color_eyre::Result<Vec<AlbumView>> {
         todo!()
     }
 
@@ -291,7 +253,7 @@ impl ApiContract for JellyfinApi {
     async fn get_playlists(&self) -> color_eyre::Result<Vec<PlaylistView>> {
         let query_result: BaseItemDtoQueryResult = serde_json::from_value(
             self.request(
-                "/Users/07bd2df2d1bf4b51b33082acf300aeba/Items".to_owned(),
+                "/Users/07bd2df2d1bf4b51b33082acf300aeba/Items",
                 &json!({
                     "Recursive": true,
                     "IncludeItemTypes": BaseItemKind::Playlist,

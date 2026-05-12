@@ -1,7 +1,11 @@
+//! Contains the logic for the player that actually plays the audio
+//! At the moment this uses MPV as the backend as it I deem it highly reliable
+//! and feature-complete
+
 use std::sync::LazyLock;
 
-use iced::futures::Stream;
 use iced::Subscription;
+use iced::futures::Stream;
 use libmpv2::{Format, Mpv};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
@@ -9,7 +13,7 @@ use url::Url;
 
 use crate::{
     backend::mpv_events::MpvEvent,
-    ui::player::{
+    ui::mpv::{
         command::{
             LOADFILE, PLAYLIST_MOVE, PLAYLIST_NEXT, PLAYLIST_PREV, PLAYLIST_REMOVE, SEEK, STOP,
         },
@@ -52,6 +56,8 @@ impl Default for Player {
 /// Mpv properties (<https://mpv.io/manual/master/#properties>) \
 /// These can be inspected in the MPV GUI using `g-r`
 pub mod property {
+    /// <https://mpv.io/manual/master/#options-volume>
+    pub const VOLUME: &str = "volume";
     /// <https://mpv.io/manual/master/#command-interface-time-pos>
     pub const TIME_POS: &str = "time-pos";
     /// If the player is currently paused
@@ -170,6 +176,8 @@ pub mod command {
     pub const PLAYLIST_MOVE: &str = "playlist-move";
 }
 
+// TODO: Since player doesn't implement view we technically don't need to use ELM
+// We could instead just have a function for each message which might declutter things.
 impl Player {
     pub fn update(&mut self, message: Message) {
         let res = match message {
@@ -205,22 +213,20 @@ impl Player {
             } => self
                 .mpv
                 .command(PLAYLIST_MOVE, &[&before.to_string(), &after.to_string()]),
-            Message::ChangeRepeatMode(mode) => {
-                match mode {
-                    RepeatMode::None => {
-                        self.mpv.set_property(LOOP_FILE, "no");
-                        self.mpv.set_property(LOOP_PLAYLIST, "no")
-                    }
-                    RepeatMode::Song => {
-                        self.mpv.set_property(LOOP_FILE, "inf");
-                        self.mpv.set_property(LOOP_PLAYLIST, "no")
-                    }
-                    RepeatMode::Queue => {
-                        self.mpv.set_property(LOOP_FILE, "no");
-                        self.mpv.set_property(LOOP_PLAYLIST, "inf")
-                    }
+            Message::ChangeRepeatMode(mode) => match mode {
+                RepeatMode::None => {
+                    self.mpv.set_property(LOOP_FILE, "no");
+                    self.mpv.set_property(LOOP_PLAYLIST, "no")
                 }
-            }
+                RepeatMode::Song => {
+                    self.mpv.set_property(LOOP_FILE, "inf");
+                    self.mpv.set_property(LOOP_PLAYLIST, "no")
+                }
+                RepeatMode::Queue => {
+                    self.mpv.set_property(LOOP_FILE, "no");
+                    self.mpv.set_property(LOOP_PLAYLIST, "inf")
+                }
+            },
             Message::Shuffle(shuffle) => self.mpv.set_property(SHUFFLE, shuffle),
         };
     }
