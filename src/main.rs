@@ -14,6 +14,7 @@ fn main() {
 
     iced::application(App::default, App::update, App::view)
         .subscription(App::subscription)
+        .theme(App::theme)
         .font(LUCIDE_FONT_BYTES)
         .run()
         .unwrap();

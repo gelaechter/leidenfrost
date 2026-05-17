@@ -5,8 +5,8 @@ pub mod player;
 pub mod playerbar;
 pub mod queue;
 pub mod router;
-pub mod settings;
 pub mod sidebar;
+pub mod settings;
 
 use std::{
     clone::Clone,

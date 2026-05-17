@@ -19,7 +19,7 @@ use url::Url;
 use crate::{
     backend::{
         api::{
-            endpoint_api::{ApiContract, UserPasswordAuth},
+            endpoint_api::{GetPlaylistParams, MusicEndpoint, UserPasswordAuth},
             jellyfin::api::JellyfinApi,
         },
         data_view::PlaylistView,
@@ -72,6 +72,7 @@ impl Sidebar {
                 self.tab_button(lucide::music(), text("Tracks").font(bold), Route::Tracks),
                 self.tab_button(lucide::user(), text("Artists").font(bold), Route::Artists),
                 self.tab_button(lucide::tag(), text("Genres").font(bold), Route::Genres),
+                self.tab_button(lucide::settings(), text("Settings").font(bold), Route::Settings),
                 space().height(28),
                 text("Playlists").font(bold),
                 self.playlists()
@@ -101,7 +102,9 @@ impl Sidebar {
                             )
                             .await;
 
-                            jf.get_playlists().await.unwrap()
+                            jf.get_playlists(GetPlaylistParams::default())
+                                .await
+                                .unwrap()
                         },
                         |p| Cmd::PlaylistsFetched(p).into(),
                     )
@@ -143,17 +146,17 @@ impl Sidebar {
             button::Style {
                 // Round the button
                 border: Border::default().rounded(2),
-                // Make gray if hovered over
+                // Make background gray if hovered over
                 background: if matches!(status, button::Status::Hovered) {
                     Some(Background::Color(palette.background.weak.color))
                 } else {
                     None
                 },
-                // Make blue if route is selected
+                // Make text blue if route is selected
                 text_color: if self.route == route {
                     palette.primary.strong.color
                 } else {
-                    button::Style::default().text_color
+                    palette.background.base.text
                 },
                 ..Default::default()
             }

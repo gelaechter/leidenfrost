@@ -12,6 +12,7 @@ use iced::{
 use crate::ui::{
     components::tagged::tagged,
     router::{albums::Albums, tracks::Tracks},
+    settings::{Settings, SettingsMsg},
 };
 
 #[derive(Default)]
@@ -26,7 +27,7 @@ pub enum Route {
     #[default]
     Home,
     Favorites,
-    // A specific album identified by Id
+    /// A specific album identified by Id
     Album(String),
     Albums,
     Tracks,
@@ -37,6 +38,7 @@ pub enum Route {
     /// A specific genre identified by Id
     Genre(String),
     Genres,
+    Settings,
 }
 
 #[derive(Debug, Clone)]
@@ -44,13 +46,17 @@ pub enum Message {
     ChangeRoute(Route),
     TracksDriver(tracks::Message),
     AlbumsDriver(albums::Message),
+    SettingsDriver(SettingsMsg),
 }
 
 impl Router {
-    pub fn view(&self) -> Element<'_, Message> {
+    // TODO: Right now we take &Settings everytime we view;
+    //  Instead consider having the Router own an Rc<RefCell<Settings>>
+    pub fn view<'a>(&'a self, settings: &'a Settings) -> Element<'a, Message> {
         struct Albums;
         struct Home;
         struct Tracks;
+        struct Settings;
 
         /// Stores a view as well as a tag for use with [`tagged`]
         struct RouteView<'a> {
@@ -78,6 +84,10 @@ impl Router {
             Route::Artist(_) => todo!(),
             Route::Genre(_) => todo!(),
             Route::Album(_) => todo!(),
+            Route::Settings => RouteView {
+                view: settings.view().map(Message::SettingsDriver),
+                tag: Tag::of::<Settings>(),
+            },
         };
 
         // Treats the routes as fundamentally different
@@ -89,7 +99,7 @@ impl Router {
             .into()
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, settings: &mut Settings, message: Message) -> Task<Message> {
         match message {
             Message::ChangeRoute(route) => {
                 self.route = route;
@@ -100,6 +110,11 @@ impl Router {
             }
             Message::AlbumsDriver(message) => {
                 self.albums.update(message).map(Message::AlbumsDriver)
+            }
+            Message::SettingsDriver(icmsg) => {
+                // We directly pass these upwards
+                settings.update(icmsg);
+                Task::none()
             }
         }
     }

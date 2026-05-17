@@ -6,7 +6,7 @@ use url::Url;
 
 use crate::{
     backend::api::{
-        endpoint_api::{ApiContract, UserPasswordAuth},
+        endpoint_api::{GetTracksParams, MusicEndpoint, Pagination, UserPasswordAuth},
         jellyfin::api::JellyfinApi,
     },
     ui::components::{
@@ -76,20 +76,26 @@ impl Tracks {
                     )
                     .await;
 
-                    jf.get_tracks().await.unwrap()
+                    jf.get_tracks(GetTracksParams {
+                        pagination: Some(Pagination {
+                            start: 0,
+                            limit: 100,
+                        }),
+                        sorting: None,
+                    })
+                    .await
+                    .unwrap()
                 })
                 .then(|tracks| {
                     // After fetching convert the track_views into rowdata
                     Task::perform(
                         async {
                             // [`TrackRow::from::<TrackView>()`] is blocking
-                            let row_data: Vec<TrackRow> = tokio::task::spawn_blocking(move || {
+                            tokio::task::spawn_blocking(move || {
                                 tracks.into_iter().map(TrackRow::from).collect()
                             })
                             .await
-                            .unwrap();
-
-                            (0..100).flat_map(|_| row_data.clone()).collect()
+                            .unwrap()
                         },
                         Message::RowsCreated,
                     )

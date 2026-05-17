@@ -5,12 +5,14 @@ use uuid::Uuid;
 
 use crate::backend::{
     api::{
-        endpoint_api::ApiContract,
+        endpoint_api::{
+            AlbumSorting, MusicEndpoint, ArtistSorting, GenreSorting, PlaylistSorting, TrackSorting,
+        },
         jellyfin::{
             api::JellyfinApi,
             data::{
-                BaseItemDto, BaseItemImageTags, BaseItemKind, ImageBlurHash, NameGuidPair,
-                UserItemDataDto,
+                BaseItemDto, BaseItemImageTags, BaseItemKind, ImageBlurHash, ItemSortBy,
+                NameGuidPair, UserItemDataDto,
             },
         },
     },
@@ -18,7 +20,7 @@ use crate::backend::{
     db::models::{Album, Playlist, Track},
 };
 
-pub trait Normalize<T, R>: Sized + ApiContract {
+pub trait Normalize<T, R>: Sized + MusicEndpoint {
     fn normalize(&self, value: T) -> R;
 }
 
@@ -307,6 +309,74 @@ impl Normalize<BaseItemDto, AlbumView> for JellyfinApi {
                 .map(|NameGuidPair { id, name }| RelatedGenre { id, name })
                 .collect(),
             duration: run_time_ticks.map(|t| t / 10_000_000),
+        }
+    }
+}
+
+impl From<TrackSorting> for ItemSortBy {
+    fn from(value: TrackSorting) -> Self {
+        match value {
+            TrackSorting::Album => Self::Album,
+            TrackSorting::AlbumArtist => Self::AlbumArtist,
+            TrackSorting::Title => Self::Name,
+            TrackSorting::Artist => Self::Artist,
+            TrackSorting::Duration => Self::Runtime,
+            TrackSorting::PlayCount => Self::PlayCount,
+            TrackSorting::Random => Self::Random,
+            TrackSorting::DateAdded => Self::DateLastContentAdded, //TODO: check if this is
+            // correct
+            TrackSorting::DatePlayed => Self::DatePlayed,
+            TrackSorting::DateReleased => Self::PremiereDate,
+        }
+    }
+}
+
+impl From<AlbumSorting> for ItemSortBy {
+    fn from(value: AlbumSorting) -> Self {
+        match value {
+            AlbumSorting::Name => Self::Name,
+            AlbumSorting::AlbumArtist => Self::AlbumArtist,
+            AlbumSorting::TrackCount => panic!("Unsupported"), //TODO: check if this is correct
+            AlbumSorting::Duration => Self::Runtime,
+            AlbumSorting::DateAdded => Self::DateLastContentAdded,
+            AlbumSorting::DateReleased => Self::PremiereDate,
+            AlbumSorting::Random => Self::Random,
+        }
+    }
+}
+
+impl From<ArtistSorting> for ItemSortBy {
+    fn from(value: ArtistSorting) -> Self {
+        match value {
+            ArtistSorting::Name => Self::Name,
+            ArtistSorting::AlbumCount => panic!("Unsupported"),
+            ArtistSorting::TrackCount => panic!("Unsupported"),
+            ArtistSorting::Duration => Self::Runtime,
+            ArtistSorting::Random => Self::Random,
+        }
+    }
+}
+
+impl From<GenreSorting> for ItemSortBy {
+    fn from(value: GenreSorting) -> Self {
+        match value {
+            GenreSorting::Name => Self::Name,
+            GenreSorting::AlbumCount => panic!("Unsupported"),
+            GenreSorting::TrackCount => panic!("Unsupported"),
+            GenreSorting::Duration => Self::Runtime,
+            GenreSorting::Random => Self::Random,
+        }
+    }
+}
+
+impl From<PlaylistSorting> for ItemSortBy {
+    fn from(value: PlaylistSorting) -> Self {
+        match value {
+            PlaylistSorting::Name => Self::Name,
+            PlaylistSorting::AlbumCount => panic!("Unsupported"),
+            PlaylistSorting::TrackCount => panic!("Unsupported"),
+            PlaylistSorting::Duration => Self::Runtime,
+            PlaylistSorting::Random => Self::Random,
         }
     }
 }

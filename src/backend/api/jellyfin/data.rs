@@ -8,7 +8,7 @@ use serde::Serialize;
 /// Returned by the ItemsApi
 /// <https://typescript-sdk.jellyfin.org/classes/generated-client.ItemsApi.html#getitems>
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct BaseItemDtoQueryResult {
     pub items: Vec<BaseItemDto>,
     pub start_index: i64,
@@ -16,7 +16,7 @@ pub struct BaseItemDtoQueryResult {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct BaseItemDto {
     pub air_days: Option<Vec<DayOfWeek>>,
     pub airs_after_season_number: Option<i64>,
@@ -185,7 +185,7 @@ pub enum DayOfWeek {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct NameGuidPair {
     pub id: String,
     pub name: Option<String>,
@@ -208,7 +208,7 @@ pub enum ChannelType {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct ChapterInfo {
     pub image_date_modified: Option<String>,
     pub image_path: Option<String>,
@@ -235,7 +235,7 @@ pub enum CollectionType {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct ExternalUrl {
     pub name: Option<String>,
     pub url: Option<String>,
@@ -258,7 +258,7 @@ pub enum ExtraType {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct BaseItemDtoImageBlurHashes {
     #[serde(default, deserialize_with = "blur_entries_from_map")]
     pub art: Option<Vec<ImageBlurHash>>,
@@ -328,7 +328,7 @@ pub enum MetadataField {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct MediaSourceInfo {
     pub analyze_duration_ms: Option<i64>,
     pub bitrate: Option<i64>,
@@ -378,7 +378,7 @@ pub struct MediaSourceInfo {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct MediaStream {
     pub aspect_ratio: Option<String>,
     pub audio_spatial_format: Option<AudioSpatialFormat>,
@@ -456,7 +456,7 @@ pub enum MediaType {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct BaseItemPerson {
     pub id: Option<String>,
     pub image_blur_hashes: Option<BaseItemPersonImageBlurHashes>,
@@ -473,14 +473,14 @@ pub enum PlayAccess {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct MediaUrl {
     pub name: Option<String>,
     pub url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct TrickplayInfoDto {
     pub bandwidth: Option<i64>,
     pub height: Option<i64>,
@@ -533,7 +533,7 @@ pub enum BaseItemKind {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct UserItemDataDto {
     pub is_favorite: Option<bool>,
     pub item_id: Option<String>,
@@ -577,7 +577,7 @@ pub enum MediaProtocol {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct MediaAttachment {
     pub codec: Option<String>,
     pub codec_tag: Option<String>,
@@ -659,7 +659,7 @@ pub enum VideoRangeType {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct BaseItemPersonImageBlurHashes {
     #[serde(default, deserialize_with = "blur_entries_from_map")]
     pub art: Option<Vec<ImageBlurHash>>,
@@ -741,7 +741,7 @@ where
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Hash)]
-#[serde(rename_all = "PascalCase", deny_unknown_fields)]
+#[serde(rename_all = "PascalCase")]
 pub struct BaseItemImageTags {
     pub art: Option<String>,
     pub backdrop: Option<String>,
@@ -756,4 +756,39 @@ pub struct BaseItemImageTags {
     pub profile: Option<String>,
     pub screenshot: Option<String>,
     pub thumb: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Hash)]
+#[serde(rename_all = "PascalCase")]
+pub enum ItemSortBy {
+    AiredEpisodeOrder,
+    AirTime,
+    Album,
+    AlbumArtist,
+    Artist,
+    CommunityRating,
+    CriticRating,
+    DateCreated,
+    DateLastContentAdded,
+    DatePlayed,
+    Default,
+    IndexNumber,
+    IsFavoriteOrLiked,
+    IsFolder,
+    IsPlayed,
+    IsUnplayed,
+    Name,
+    OfficialRating,
+    ParentIndexNumber,
+    PlayCount,
+    PremiereDate,
+    ProductionYear,
+    Random,
+    Runtime,
+    SeriesDatePlayed,
+    SeriesSortName,
+    SortName,
+    StartDate,
+    Studio,
+    VideoBitRate,
 }

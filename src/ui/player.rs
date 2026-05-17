@@ -295,7 +295,7 @@ impl Player {
             Cmd::Append(url) => self.mpv.command(LOADFILE, &["append", url.as_str()]),
             Cmd::AppendAll(urls) => {
                 for url in urls {
-                    self.update_cmd(Cmd::Append(url));
+                    self.update_cmd(Cmd::Append(url))?;
                 }
                 Ok(())
             }
@@ -311,15 +311,15 @@ impl Player {
                 .command(PLAYLIST_MOVE, &[&before.to_string(), &after.to_string()]),
             Cmd::ChangeRepeatMode(mode) => match mode {
                 RepeatMode::None => {
-                    self.mpv.set_property(LOOP_FILE, "no");
+                    self.mpv.set_property(LOOP_FILE, "no")?;
                     self.mpv.set_property(LOOP_PLAYLIST, "no")
                 }
                 RepeatMode::Song => {
-                    self.mpv.set_property(LOOP_FILE, "inf");
+                    self.mpv.set_property(LOOP_FILE, "inf")?;
                     self.mpv.set_property(LOOP_PLAYLIST, "no")
                 }
                 RepeatMode::Queue => {
-                    self.mpv.set_property(LOOP_FILE, "no");
+                    self.mpv.set_property(LOOP_FILE, "no")?;
                     self.mpv.set_property(LOOP_PLAYLIST, "inf")
                 }
             },

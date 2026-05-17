@@ -1,9 +1,9 @@
 //! The App is the top level model in leidenfrost
 
 use iced::{
-    Color, Element,
+    Element,
     Length::Fill,
-    Subscription, Task,
+    Subscription, Task, Theme,
     keyboard::{self, Key, key::Named},
     widget::{
         column, container,
@@ -15,20 +15,14 @@ use iced::widget::pane_grid;
 use url::Url;
 
 use crate::ui::{
-    ICMsg,
-    player::{self, Player, PlayerMsg},
-    playerbar::{self, PlayerBar, PlayerBarMsg},
-    queue::{self, Queue},
-    router::{self, Router},
-    settings::{self, Settings},
-    sidebar::{self, Sidebar, SidebarMsg},
+    ICMsg, player::{self, Player, PlayerMsg}, playerbar::{self, PlayerBar, PlayerBarMsg}, queue::{self, Queue}, router::{self, Router}, settings::Settings, sidebar::{self, Sidebar, SidebarMsg}
 };
 
 /// App is the top level model in this application
 pub struct App {
     panes: pane_grid::State<Pane>,
-    settings: Settings,
     sidebar: Sidebar,
+    settings: Settings,
     router: Router,
     queue: Queue,
     player: Player,
@@ -38,11 +32,11 @@ pub struct App {
 impl Default for App {
     fn default() -> Self {
         let sidebar = Sidebar::default();
+        let settings = Settings::default();
         let router = Router::default();
         let queue = Queue::default();
         let player = Player::default();
         let player_bar = PlayerBar::default();
-        let settings = Settings::default();
 
         // Creates a new pane state and immediately splits it
         let panes = pane_grid::State::<Pane>::with_configuration(Configuration::Split {
@@ -59,12 +53,12 @@ impl Default for App {
 
         Self {
             panes,
-            settings,
             sidebar,
             router,
             queue,
             player,
             player_bar,
+            settings,
         }
     }
 }
@@ -87,7 +81,6 @@ pub enum Message {
     PlayerBar(PlayerBarMsg),
     KeyboardEvent(keyboard::Event),
     Player(PlayerMsg),
-    Settings(settings::Message),
 }
 
 /// The main layout of the application
@@ -100,15 +93,12 @@ impl App {
                 pane_grid::Content::new(match state {
                     Pane::Sidebar => self.sidebar.view().map(Message::Sidebar),
                     Pane::Queue => self.queue.view().map(|m| Message::Queue(Box::new(m))),
-                    Pane::Router => self.router.view().map(Message::Router),
+                    Pane::Router => self.router.view(&self.settings).map(Message::Router),
                 })
             })
             .on_resize(10, Message::PaneResized),
             // The player bar
-            self.player_bar
-                .view()
-                .map(Message::PlayerBar)
-                .explain(Color::BLACK)
+            self.player_bar.view().map(Message::PlayerBar)
         ])
         .height(Fill)
         .width(Fill)
@@ -127,7 +117,10 @@ impl App {
                     // Pass update router upwards
                     sidebar::Out::UpdateRoute(ref route) => Task::batch([self
                         .router
-                        .update(router::Message::ChangeRoute(route.clone()))
+                        .update(
+                            &mut self.settings,
+                            router::Message::ChangeRoute(route.clone()),
+                        )
                         .map(Message::Router)]),
                 },
             },
@@ -135,9 +128,10 @@ impl App {
                 .queue
                 .update(*queue_message)
                 .map(|m| Message::Queue(Box::new(m))),
-            Message::Router(router_message) => {
-                self.router.update(router_message).map(Message::Router)
-            }
+            Message::Router(router_message) => self
+                .router
+                .update(&mut self.settings, router_message)
+                .map(Message::Router),
             // Player bar wiring
             Message::PlayerBar(message) => match message {
                 ICMsg::Cmd(cmd) => self.player_bar.update(cmd).map(Message::PlayerBar),
@@ -173,7 +167,7 @@ impl App {
                         // Forward change route (from clicking links)
                         Bar::ChangeRoute(route) => self
                             .router
-                            .update(router::Message::ChangeRoute(route))
+                            .update(&mut self.settings, router::Message::ChangeRoute(route))
                             .map(Message::Router),
                     }
                 }
@@ -182,14 +176,10 @@ impl App {
                 keyboard::Event::KeyPressed {
                     key: Key::Named(Named::F11),
                     ..
-                } => {
-                    self.settings.debug_overlay = !self.settings.debug_overlay;
-                    Task::none()
-                }
+                } => Task::none(),
                 _ => Task::none(),
             },
             Message::Player(message) => {
-                dbg!(&message);
                 match message {
                     ICMsg::Cmd(cmd) => self.player.update(cmd).map(Message::Player),
                     ICMsg::Out(out) => {
@@ -204,10 +194,6 @@ impl App {
                     }
                 }
             }
-            Message::Settings(message) => {
-                self.settings.update(message);
-                Task::none()
-            }
         }
     }
 
@@ -216,5 +202,9 @@ impl App {
             keyboard::listen().map(Message::KeyboardEvent),
             Player::subscription().map(Message::Player),
         ])
+    }
+
+    pub fn theme(&self) -> Option<Theme> {
+        self.settings.theme.clone()
     }
 }

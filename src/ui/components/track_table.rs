@@ -190,7 +190,7 @@ pub fn combined_title_column() -> Column<TrackRow, TrackCellMsg> {
                     |RelatedArtist { id, name }| {
                         (
                             name.unwrap_or("Unknown artist".to_owned()),
-                            Route::Artist(id.to_string()),
+                            Route::Artist(id.clone()),
                         )
                     },
                     TrackCellMsg::ChangeRoute,

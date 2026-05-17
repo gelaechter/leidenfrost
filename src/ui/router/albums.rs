@@ -19,7 +19,7 @@ use url::Url;
 use crate::{
     backend::{
         api::{
-            endpoint_api::{ApiContract, UserPasswordAuth},
+            endpoint_api::{MusicEndpoint, GetAlbumsParams, UserPasswordAuth},
             jellyfin::api::JellyfinApi,
         },
         data_view::{AlbumView, RelatedArtist},
@@ -93,7 +93,7 @@ impl Albums {
                     )
                     .await;
 
-                    jf.get_albums().await.unwrap()
+                    jf.get_albums(GetAlbumsParams::default()).await.unwrap()
                 })
                 .then(|albums| {
                     // After fetching convert the track_views into rowdata

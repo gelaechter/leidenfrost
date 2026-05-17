@@ -6,8 +6,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use thiserror::Error;
 
-/// An enum representing the different types of ApiError::RequestError \
-/// Automatically coerces into an ApiError::RequestError
+/// An enum representing the different types of [`ApiError::RequestError`] \
+/// Automatically coerces into an [`ApiError::RequestError`]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum RequestError {
     Unauthorized,
@@ -40,9 +40,7 @@ impl Display for RequestError {
 /// Should be used as Error type on all Tauri commands
 #[derive(Error, Debug, Serialize, Deserialize, Clone)]
 pub enum ApiError {
-    #[error("Currently no API is selected")]
-    NoApi,
-    #[error("Currently your selected Api is unauthorized")]
+    #[error("Request Unauthorized")]
     ApiUnauthorized,
     #[error("Request to server failed: {0}")]
     RequestError(RequestError),
