@@ -52,6 +52,7 @@ impl Router {
         struct Home;
         struct Tracks;
 
+        /// Stores a view as well as a tag for use with [`tagged`]
         struct RouteView<'a> {
             view: Element<'a, Message>,
             tag: Tag,

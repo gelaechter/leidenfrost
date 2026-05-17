@@ -1,5 +1,6 @@
 use libmpv2::{EndFileReason, LogLevel};
 
+/// An owned variant of [`libmpv2::events::Event`]
 #[derive(Debug, Clone)]
 pub enum MpvEvent {
     Shutdown,
@@ -30,10 +31,11 @@ pub enum MpvEvent {
         reply_userdata: u64,
     },
     QueueOverflow,
-    // Deprecated events are rare, so we can skip or handle minimally
     Deprecated,
 }
 
+
+/// An owned version of [`libmpv2::events::PropertyData`]
 #[derive(Debug, Clone, Default)]
 pub enum MpvValue {
     #[default]

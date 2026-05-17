@@ -6,7 +6,7 @@ use mpris_server::{
     TrackId, Volume, zbus::Result, zbus::fdo,
 };
 
-use crate::backend::mpv_events::MpvEvent;
+use crate::backend::mpv_data::MpvEvent;
 
 #[derive(Default)]
 struct MprisServer {

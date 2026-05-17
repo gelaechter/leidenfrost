@@ -25,6 +25,7 @@ use crate::{
         data_view::PlaylistView,
     },
     ui::{
+        ICMsg, ToCmdMsg, ToOutMsg,
         components::image::{self, Image},
         router::Route,
     },
@@ -38,15 +39,21 @@ pub struct Sidebar {
 }
 
 #[derive(Clone, Debug)]
-pub enum Message {
+pub enum Cmd {
     FetchPlaylists,
     PlaylistsFetched(Vec<PlaylistView>),
-    UpdateRoute(Route),
     ImageDriver(image::Message),
 }
 
+#[derive(Clone, Debug)]
+pub enum Out {
+    UpdateRoute(Route),
+}
+
+pub type SidebarMsg = ICMsg<Cmd, Out>;
+
 impl Sidebar {
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view(&self) -> Element<'_, SidebarMsg> {
         let bold = Font {
             weight: font::Weight::Medium,
             ..Font::DEFAULT
@@ -75,55 +82,54 @@ impl Sidebar {
         .into()
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
-        match message {
-            Message::UpdateRoute(route) => {
-                self.route = route;
-                Task::none()
-            }
-            Message::FetchPlaylists => {
-                // Only fetch first time
-                if !self.playlists.is_empty() {
-                    return Task::none();
+    pub fn update(&mut self, message: impl Into<SidebarMsg>) -> Task<SidebarMsg> {
+        message.into().cmd(|cmd| {
+            let task: Task<SidebarMsg> = match cmd {
+                Cmd::FetchPlaylists => {
+                    // Only fetch first time
+                    if !self.playlists.is_empty() {
+                        return Task::none();
+                    }
+
+                    Task::perform(
+                        async {
+                            // TODO: Replace with global state
+                            let jf = JellyfinApi::auth_user_password(
+                                Url::parse("http://***REMOVED***").unwrap(),
+                                "***REMOVED***".to_string(),
+                                "***REMOVED***".to_string(),
+                            )
+                            .await;
+
+                            jf.get_playlists().await.unwrap()
+                        },
+                        |p| Cmd::PlaylistsFetched(p).into(),
+                    )
                 }
+                Cmd::PlaylistsFetched(playlist_views) => {
+                    // Load images
+                    self.images.insert(playlist_views.iter().filter_map(|view| {
+                        let url = view.playlist.image_url.clone();
+                        let blurhash = view.playlist.image_blur_hash.clone();
+                        url.map(|url| Image::new(url).blurhash_maybe(blurhash))
+                    }));
 
-                Task::perform(
-                    async {
-                        // TODO: Replace with global state
-                        let jf = JellyfinApi::auth_user_password(
-                            Url::parse("http://***REMOVED***").unwrap(),
-                            "***REMOVED***".to_string(),
-                            "***REMOVED***".to_string(),
-                        )
-                        .await;
-
-                        jf.get_playlists().await.unwrap()
-                    },
-                    Message::PlaylistsFetched,
-                )
-            }
-            Message::PlaylistsFetched(playlist_views) => {
-                // Load images
-                self.images.insert(playlist_views.iter().filter_map(|view| {
-                    let url = view.playlist.image_url.clone();
-                    let blurhash = view.playlist.image_blur_hash.clone();
-                    url.map(|url| Image::new(url).blurhash_maybe(blurhash))
-                }));
-
-                self.playlists = playlist_views;
-                Task::none()
-            }
-            Message::ImageDriver(m) => self.images.update(m).map(Message::ImageDriver),
-        }
+                    self.playlists = playlist_views;
+                    Task::none()
+                }
+                Cmd::ImageDriver(m) => self.images.update(m).map(|m| Cmd::ImageDriver(m).cmd_msg()),
+            };
+            task
+        })
     }
 
     /// The tab select of the sidebar
     pub fn tab_button<'a>(
         &'a self,
-        icon: impl Into<Element<'a, Message>>,
-        text: impl Into<Element<'a, Message>>,
+        icon: impl Into<Element<'a, SidebarMsg>>,
+        text: impl Into<Element<'a, SidebarMsg>>,
         route: Route,
-    ) -> Element<'a, Message> {
+    ) -> Element<'a, SidebarMsg> {
         widget::button(
             row![
                 icon.into(), // Here we manually erase the types
@@ -131,7 +137,7 @@ impl Sidebar {
             ]
             .spacing(8),
         )
-        .on_press(Message::UpdateRoute(route.clone()))
+        .on_press(Out::UpdateRoute(route.clone()).out_msg())
         .style(move |theme, status| {
             let palette = theme.palette();
             button::Style {
@@ -156,13 +162,13 @@ impl Sidebar {
         .into()
     }
 
-    pub fn playlists(&self) -> Element<'_, Message> {
+    pub fn playlists(&self) -> Element<'_, SidebarMsg> {
         let playlists = self.playlists.iter().map(|view| {
             let image = if let Some(image_url) = view.playlist.image_url.as_ref()
                 && let Some(image) = self.images.view(image_url)
             {
                 // Show an image if it's ready
-                image.map(Message::ImageDriver)
+                image.map(|m| Cmd::ImageDriver(m).cmd_msg())
             } else {
                 // Or show a placeholder
                 lucide::disc_album().size(18).into()
@@ -184,7 +190,7 @@ impl Sidebar {
 
         let playlists = widget::column(playlists);
         widget::sensor(playlists)
-            .on_show(|_| Message::FetchPlaylists)
+            .on_show(|_| Cmd::FetchPlaylists.cmd_msg())
             .into()
     }
 }

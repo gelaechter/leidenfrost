@@ -5,6 +5,11 @@ use iced::widget::{
     text::{Rich, Span},
 };
 
+use crate::{
+    backend::data_view::RelatedArtist,
+    ui::{components::style::em_dash, router::Route},
+};
+
 pub trait IntoLink {
     fn link<'a, Link, Message>(
         self,
@@ -34,9 +39,10 @@ where
 
 pub trait IntoLinks {
     type Item;
-    
-    /// Constructs [`text::rich::Rich`] text links from any iterable as long as the
-    /// transformation function `f` can turn it into a (String, Link) pair.
+
+    /// Constructs [`text::rich::Rich`] text links from any iterable as long as
+    /// the transformation function `f` can turn it into a (String, Link)
+    /// pair.
     fn into_links<'a, F, Link, Message>(
         self,
         f: F,
@@ -80,6 +86,17 @@ where
         .collect();
 
         widget::rich_text(text).on_link_click(on_link_click)
+    }
+}
+
+impl RelatedArtist {
+    /// A function providing a the text and route for this related artist
+    /// Use this in conjunction with [`IntoLink`] or [`IntoLinks`]
+    pub fn link(&self) -> (String, Route) {
+        (
+            self.name.clone().unwrap_or(em_dash()),
+            Route::Artist(self.id.clone()),
+        )
     }
 }
 

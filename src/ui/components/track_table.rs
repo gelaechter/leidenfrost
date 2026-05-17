@@ -140,11 +140,7 @@ pub fn album_column() -> Column<TrackRow, TrackCellMsg> {
         || column_header("Album").into(),
         |row: &TrackRow| {
             // Display the album name as clickable link that takes you there
-            let album_name = row
-                .view
-                .album_name
-                .clone()
-                .unwrap_or("Unknown album".to_owned());
+            let album_name = row.view.album_name.clone().unwrap_or("Unknown album".to_owned());
 
             album_name
                 .link(

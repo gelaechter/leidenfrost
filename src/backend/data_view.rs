@@ -1,10 +1,12 @@
 use crate::backend::db::models::{Album, Disc, Playlist, Track};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelatedArtist {
     pub id: String,
     pub name: Option<String>,
 }
 
+/// This only needs the name as the item itself usually carries the album id
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelatedAlbum {
     pub id: String,
@@ -22,7 +24,8 @@ pub struct TrackView {
     pub track: Track,
     /// The artists who created this track
     pub artists: Vec<RelatedArtist>,
-    /// The name of the album this track belongs to
+    /// The of the album this track belongs to
+    /// [`Track`] already carries the id of the album
     pub album_name: Option<String>,
     /// The genres that apply to this track
     pub genres: Vec<RelatedGenre>,

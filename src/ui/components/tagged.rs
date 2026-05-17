@@ -3,6 +3,7 @@ use iced::{
     advanced::{Widget, renderer, widget::tree::Tag},
 };
 
+/// Creates a new [`Tagged`] widget
 pub fn tagged<'a, Message, Theme, Renderer>(
     inner: impl Into<Element<'a, Message, Theme, Renderer>>,
     tag: Tag,

@@ -60,3 +60,9 @@ pub fn default_header<'a, Msg: Clone + 'a>(
     .height(Shrink)
     .padding(Padding::new(12.0))
 }
+
+/// Provides an em dash String to signify missing data
+pub fn em_dash() -> String {
+    static EM_DASH: &str = "—";
+    EM_DASH.to_string()
+}

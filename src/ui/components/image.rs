@@ -69,23 +69,24 @@ impl Manager {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::ImageDriver(uuid, image_message) => match self.images.get_mut(&uuid) {
-                Some(image) => image
-                    .update(image_message)
-                    .map(move |m| Message::ImageDriver(uuid, m)),
-                None => {
+            Message::ImageDriver(uuid, image_message) => {
+                if let Some(image) = self.images.get_mut(&uuid) {
+                    image
+                        .update(image_message)
+                        .map(move |m| Message::ImageDriver(uuid, m))
+                } else {
                     log::warn!(
                         "Received message {image_message:?} in event loop for non-existing image {uuid:?}"
                     );
                     Task::none()
                 }
-            },
+            }
         }
     }
 }
 
-/// An image that will automatically try to fetch the correct image size from the API
-/// this is done through the ImageSize trait of the API.
+/// An image that will automatically try to fetch the correct image size from
+/// the API this is done through the ImageSize trait of the API.
 /// An ImageSize implementer can be passed to the Image as a generic
 #[derive(Debug, Clone)]
 pub struct Image {
@@ -111,9 +112,9 @@ pub struct Image {
     /// The currently allocated image data (if any)
     status: Option<Content>,
     /// Any running download task
-    _download_task: Option<task::Handle>,
+    download_task: Option<task::Handle>,
     /// Any running blurhash decoding task
-    _blurhash_task: Option<task::Handle>,
+    blurhash_task: Option<task::Handle>,
 }
 
 #[derive(Debug, Clone)]
@@ -149,8 +150,8 @@ impl Image {
             },
             status: None,
             debounce: None,
-            _download_task: None,
-            _blurhash_task: None,
+            download_task: None,
+            blurhash_task: None,
             height: None,
             width: None,
             aspect_ratio: None,
@@ -183,9 +184,9 @@ impl Image {
 
     /// Debounces the visibility of the image
     ///
-    /// This can be used together with [`Image::pre_decode_blurhash`] to immediately
-    /// show a blurhash but only start fetching the actual image once it has been
-    /// visible for a certain amount of time.
+    /// This can be used together with [`Image::pre_decode_blurhash`] to
+    /// immediately show a blurhash but only start fetching the actual image
+    /// once it has been visible for a certain amount of time.
     pub fn debounce(mut self, duration: Duration) -> Self {
         self.debounce = Some(duration);
         self
@@ -198,7 +199,8 @@ impl Image {
             Some(Content::Blurhash(handle)) | Some(Content::Full(handle)) => {
                 // Either the blurhash or the image have been loaded
                 widget::image(handle)
-                    // Use width an height instead of expand to enforce full size and prevent resizing
+                    // Use width an height instead of expand to enforce full size and prevent
+                    // resizing
                     .width(Fill)
                     .height(Fill)
                     .content_fit(ContentFit::Cover)
@@ -250,11 +252,11 @@ impl Image {
                     // Blurhash rendered
                     Some(Content::Blurhash(_)) => self.download_task(),
                     // Do nothing if image already loaded or errored
-                    Some(Content::Full(_)) | Some(Content::Error) => Task::none(),
+                    Some(Content::Full(_) | Content::Error) => Task::none(),
                 }
             }
             IMessage::Hidden => {
-                if let Some(download_task) = &self._download_task.take() {
+                if let Some(download_task) = &self.download_task.take() {
                     download_task.abort();
                 };
                 Task::none()
@@ -280,22 +282,22 @@ impl Image {
                 if let Ok(handle) = handle {
                     self.status = Some(Content::Blurhash(handle));
                 } else {
-                    self.status = Some(Content::Error)
+                    self.status = Some(Content::Error);
                 }
-                self._blurhash_task.take();
+                self.blurhash_task.take();
                 Task::none()
             }
             IMessage::Downloaded(handle) => {
                 if let Ok(handle) = handle {
                     self.status = Some(Content::Full(handle));
                     // Download has concluded so abort blurhash decoding
-                    if let Some(blurhash_task) = &self._blurhash_task.take() {
+                    if let Some(blurhash_task) = &self.blurhash_task.take() {
                         blurhash_task.abort();
                     }
                 } else {
-                    self.status = Some(Content::Error)
+                    self.status = Some(Content::Error);
                 }
-                self._download_task.take();
+                self.download_task.take();
 
                 Task::none()
             }
@@ -344,7 +346,7 @@ impl Image {
             url,
             container_size: size,
             image_resizer,
-            _download_task,
+            download_task: _download_task,
             ..
         } = self;
 
@@ -380,7 +382,7 @@ impl Image {
         let Self {
             container_size: size,
             blurhash,
-            _blurhash_task,
+            blurhash_task: _blurhash_task,
             ..
         } = self;
 
@@ -394,7 +396,7 @@ impl Image {
             blurhash
                 .clone()
                 .expect("The blurhash_task function should only be called when blurhash is Some")
-                .to_string(),
+                .clone(),
             *size,
         ))
         // Then allocate image
@@ -416,7 +418,7 @@ impl Image {
         .abortable();
 
         // Set blurhash handle and return value
-        self._blurhash_task = Some(blurhash_handle.abort_on_drop());
+        self.blurhash_task = Some(blurhash_handle.abort_on_drop());
         blurhash_task
     }
 }
