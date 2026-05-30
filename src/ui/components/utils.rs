@@ -7,7 +7,7 @@ use iced::widget::{
 
 use crate::{
     backend::data_view::RelatedArtist,
-    ui::{components::style::em_dash, router::Route},
+    ui::{components::style::EM_DASH, router::Route},
 };
 
 pub trait IntoLink {
@@ -94,7 +94,7 @@ impl RelatedArtist {
     /// Use this in conjunction with [`IntoLink`] or [`IntoLinks`]
     pub fn link(&self) -> (String, Route) {
         (
-            self.name.clone().unwrap_or(em_dash()),
+            self.name.clone().unwrap_or(EM_DASH()),
             Route::Artist(self.id.clone()),
         )
     }

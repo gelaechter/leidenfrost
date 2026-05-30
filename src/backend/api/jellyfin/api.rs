@@ -1,18 +1,20 @@
+use std::collections::{BTreeMap, HashMap};
+
 use crate::backend::{
     api::{
         endpoint_api::{
-            self, GetAlbumsParams, GetArtistsParams, GetGenresParams, GetPlaylistParams,
-            GetTracksParams, MusicEndpoint, Pagination, SearchParams, SearchResult, Sort,
-            UserPasswordAuth,
+            self, ArtistAlbums, GetAlbumsParams, GetArtistsParams, GetGenresParams,
+            GetPlaylistParams, GetTracksParams, MusicEndpoint, Pagination, SearchParams,
+            SearchResult, Sort, UserPasswordAuth,
         },
         jellyfin::{
-            data::{BaseItemDtoQueryResult, BaseItemKind, ItemSortBy},
+            data::{BaseItemDto, BaseItemDtoQueryResult, BaseItemKind, ItemSortBy},
             errors::RequestError,
             normalize::Normalize,
         },
     },
-    data_view::{AlbumView, PlaylistView, TrackView},
-    db::models::{Artist, Disc, Genre},
+    data_view::{AlbumView, ArtistView, DiscView, GenreView, PlaylistView, TrackView},
+    db::models::{Artist, Disc},
 };
 
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
@@ -118,18 +120,55 @@ impl JellyfinApi {
     ///
     /// query parameters should be a slice of key value pairs: &[("key", "val")]
     ///
-    /// The response is parsed into a json serde value.
-    pub async fn query_items<T, S>(
+    /// The response is parsed and normalized.
+    pub async fn query_item<P, T>(&self, relative_path: &str, additional_params: &P) -> Result<T>
+    where
+        P: Serialize + ?Sized,
+        Self: Normalize<BaseItemDto, T>,
+    {
+        let request_builder = self
+            .client
+            .get(self.url.join(relative_path)?)
+            .headers(self.headers.clone());
+
+        let response = request_builder
+            .query(additional_params)
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+
+        let item: BaseItemDto = serde_json::from_str(&response).map_err(|e| {
+            RequestError::SerdeError(
+                e.to_string(),
+                format!(
+                    "Couldn't parse server response into JSON from request url {relative_path}"
+                ),
+                response.clone(),
+            )
+        })?;
+
+        Ok(self.normalize(item))
+    }
+
+    /// Make a request to a relative path e.g. /Users/.../Songs
+    ///
+    /// query parameters should be a slice of key value pairs: &[("key", "val")]
+    ///
+    /// The response is parsed and normalized.
+    pub async fn query_items<S, P, T>(
         &self,
         relative_path: &str,
         item_kind: BaseItemKind,
         pagination: Option<Pagination>,
         sorting: Option<Sort<S>>,
-        additional_parameters: &T,
-    ) -> Result<BaseItemDtoQueryResult>
+        additional_params: &P,
+    ) -> Result<Vec<T>>
     where
-        T: Serialize + ?Sized,
+        P: Serialize + ?Sized,
         S: Into<ItemSortBy> + std::fmt::Debug + Clone + Default,
+        Self: Normalize<BaseItemDto, T>,
     {
         let mut request_builder = self
             .client
@@ -159,32 +198,42 @@ impl JellyfinApi {
                 "Recursive": true,
                 "IncludeItemTypes": item_kind,
             }))
-            .query(additional_parameters)
+            .query(additional_params)
             .send()
             .await?
             .error_for_status()?
             .text()
             .await?;
 
-        let json: BaseItemDtoQueryResult = serde_json::from_str(&response).map_err(|e| {
-            RequestError::SerdeError(
-                e.to_string(),
-                format!(
-                    "Couldn't parse server response into JSON from request url {relative_path}"
-                ),
-                response.clone(),
-            )
-        })?;
+        let query_result: BaseItemDtoQueryResult =
+            serde_json::from_str(&response).map_err(|e| {
+                RequestError::SerdeError(
+                    e.to_string(),
+                    format!(
+                        "Couldn't parse server response into JSON from request url {relative_path}"
+                    ),
+                    response.clone(),
+                )
+            })?;
 
-        Ok(json)
+        let items = query_result
+            .items
+            .into_iter()
+            .map(|item| self.normalize(item))
+            .collect();
+
+        Ok(items)
     }
 
     pub async fn index_data(&self, db: DatabaseConnection) {}
 }
 
 impl MusicEndpoint for JellyfinApi {
-    async fn get_track(&self, song_id: String) -> Result<TrackView> {
-        todo!()
+    async fn get_track(&self, track_id: String) -> Result<TrackView> {
+        let user_id = &self.user_id;
+
+        self.query_item(&format!("/Users/{user_id}/Items/{track_id}"), &Value::Null)
+            .await
     }
 
     async fn get_tracks(&self, params: GetTracksParams) -> Result<Vec<TrackView>> {
@@ -194,7 +243,31 @@ impl MusicEndpoint for JellyfinApi {
             sorting,
         } = params;
 
-        let query_result = self
+        self.query_items(
+            &format!("/Users/{user_id}/Items"),
+            BaseItemKind::Audio,
+            pagination,
+            sorting,
+            // https://typescript-sdk.jellyfin.org/interfaces/generated-client.ItemsApiGetItemsRequest.html#fields
+            &json!({
+                "Fields": "Genres",
+            }),
+        )
+        .await
+    }
+
+    async fn get_album_tracks(
+        &self,
+        album_id: String,
+        params: GetTracksParams,
+    ) -> Result<Vec<DiscView>> {
+        let user_id = &self.user_id;
+        let GetTracksParams {
+            pagination,
+            sorting,
+        } = params;
+
+        let tracks: Vec<TrackView> = self
             .query_items(
                 &format!("/Users/{user_id}/Items"),
                 BaseItemKind::Audio,
@@ -202,30 +275,37 @@ impl MusicEndpoint for JellyfinApi {
                 sorting,
                 &json!({
                     "Fields": "Genres",
+                    "ParentId": album_id,
                 }),
             )
-            .await
-            .unwrap();
+            .await?;
 
-        let tracks = query_result
-            .items
-            .into_iter()
-            .map(|item| self.normalize(item))
-            .collect();
+        let mut discs = BTreeMap::<i64, DiscView>::new();
 
-        Ok(tracks)
-    }
+        // Sort the tracks into their discs
+        for view in tracks {
+            let number = view.track.disc_number;
+            discs
+                .entry(number)
+                .or_insert_with(|| DiscView {
+                    disc: Disc {
+                        number,
+                        album_id: album_id.clone(),
+                    },
+                    tracks: Vec::new(),
+                })
+                .tracks
+                .push(view);
+        }
 
-    async fn get_album_tracks(
-        &self,
-        album_id: String,
-        params: GetTracksParams,
-    ) -> Result<Vec<Disc>> {
-        todo!()
+        Ok(discs.into_values().collect())
     }
 
     async fn get_album(&self, album_id: String) -> Result<AlbumView> {
-        todo!()
+        let user_id = &self.user_id;
+
+        self.query_item(&format!("/Users/{user_id}/Items/{album_id}"), &Value::Null)
+            .await
     }
 
     /// This returns flat [`AlbumView`] values, these do not contain tracks
@@ -236,46 +316,104 @@ impl MusicEndpoint for JellyfinApi {
             sorting,
         } = params;
 
-        let query_result = self
+        self.query_items(
+            &format!("/Users/{user_id}/Items"),
+            BaseItemKind::MusicAlbum,
+            pagination,
+            sorting,
+            // https://typescript-sdk.jellyfin.org/interfaces/generated-client.ItemsApiGetItemsRequest.html#fields
+            &json!({
+                "Fields": "Genres",
+            }),
+        )
+        .await
+    }
+
+    async fn get_artist_albums(
+        &self,
+        artist_id: String,
+        params: GetAlbumsParams,
+    ) -> Result<ArtistAlbums> {
+        let user_id = &self.user_id;
+        let GetAlbumsParams {
+            pagination,
+            sorting,
+        } = params;
+
+        let appears_on = self
+            .query_items(
+                &format!("/Users/{user_id}/Items"),
+                BaseItemKind::MusicAlbum,
+                pagination.clone(),
+                sorting.clone(),
+                &json!({
+                    "ContributingArtistIds": artist_id,
+                }),
+            )
+            .await?;
+
+        let created = self
             .query_items(
                 &format!("/Users/{user_id}/Items"),
                 BaseItemKind::MusicAlbum,
                 pagination,
                 sorting,
                 &json!({
-                    "Fields": "Genres",
+                    "AlbumArtistIds": artist_id,
                 }),
             )
+            .await?;
+
+        Ok(ArtistAlbums {
+            appears_on,
+            created,
+        })
+    }
+
+    async fn get_artist(&self, artist_id: String) -> Result<ArtistView> {
+        let user_id = &self.user_id;
+
+        self.query_item(&format!("/Users/{user_id}/Items/{artist_id}"), &Value::Null)
             .await
-            .unwrap();
-
-        let tracks = query_result
-            .items
-            .into_iter()
-            .map(|item| self.normalize(item))
-            .collect();
-
-        Ok(tracks)
     }
 
-    async fn get_albums_from_artist(
-        &self,
-        artist_id: String,
-        params: GetAlbumsParams,
-    ) -> Result<Vec<AlbumView>> {
-        todo!()
+    async fn get_artists(&self, params: GetArtistsParams) -> Result<Vec<ArtistView>> {
+        let user_id = &self.user_id;
+        let GetArtistsParams {
+            pagination,
+            sorting,
+        } = params;
+
+        self.query_items(
+            "/Artists",
+            BaseItemKind::MusicArtist,
+            pagination,
+            sorting,
+            &json!({
+                "UserId": user_id
+            }),
+        )
+        .await
     }
 
-    async fn get_artist(&self, artist_id: String) -> Result<Artist> {
-        todo!()
-    }
+    async fn get_genres(&self, params: GetGenresParams) -> Result<Vec<GenreView>> {
+        let user_id = &self.user_id;
+        let GetGenresParams {
+            pagination,
+            sorting,
+        } = params;
 
-    async fn get_artists(&self, params: GetArtistsParams) -> Result<Vec<Artist>> {
-        todo!()
-    }
-
-    async fn get_genres(&self, params: GetGenresParams) -> Result<Vec<Genre>> {
-        todo!()
+        // https://typescript-sdk.jellyfin.org/interfaces/generated-client.GenresApiGetGenresRequest.html
+        self.query_items(
+            "/Genres",
+            BaseItemKind::MusicGenre,
+            pagination,
+            sorting,
+            &json!({
+                "UserId": user_id
+            }),
+        )
+        .await
     }
 
     async fn search(&self, search_term: String, params: SearchParams) -> Result<Vec<SearchResult>> {
@@ -289,24 +427,14 @@ impl MusicEndpoint for JellyfinApi {
             sorting,
         } = params;
 
-        let query_result = self
-            .query_items(
-                &format!("/Users/{user_id}/Items"),
-                BaseItemKind::Playlist,
-                pagination,
-                sorting,
-                &Value::Null,
-            )
-            .await
-            .unwrap();
-
-        let tracks = query_result
-            .items
-            .into_iter()
-            .map(|item| self.normalize(item))
-            .collect();
-
-        Ok(tracks)
+        self.query_items(
+            &format!("/Users/{user_id}/Items"),
+            BaseItemKind::Playlist,
+            pagination,
+            sorting,
+            &Value::Null,
+        )
+        .await
     }
 
     fn capabilities() -> endpoint_api::Capabilities {
@@ -314,7 +442,13 @@ impl MusicEndpoint for JellyfinApi {
     }
 
     async fn get_playlist(&self, playlist_id: String) -> endpoint_api::Result<PlaylistView> {
-        todo!()
+        let user_id = &self.user_id;
+
+        self.query_item(
+            &format!("/Users/{user_id}/Items/{playlist_id}"),
+            &Value::Null,
+        )
+        .await
     }
 
     async fn get_playlist_tracks(
@@ -322,6 +456,20 @@ impl MusicEndpoint for JellyfinApi {
         playlist_id: String,
         params: GetPlaylistParams,
     ) -> endpoint_api::Result<Vec<TrackView>> {
-        todo!()
+        let GetPlaylistParams {
+            pagination,
+            sorting,
+        } = params;
+
+        self.query_items(
+            &format!("/Playlist/{playlist_id}/Items"),
+            BaseItemKind::Audio,
+            pagination,
+            sorting,
+            &json!({
+                "Fields": "Genres",
+            }),
+        )
+        .await
     }
 }

@@ -13,7 +13,6 @@ use iced::{
     Font, font,
     widget::{column, row, text},
 };
-use iced_fonts::lucide;
 use url::Url;
 
 use crate::{
@@ -26,7 +25,7 @@ use crate::{
     },
     ui::{
         ICMsg, ToCmdMsg, ToOutMsg,
-        components::image::{self, Image},
+        components::{icons, image::{self, Image}},
         router::Route,
     },
 };
@@ -62,17 +61,17 @@ impl Sidebar {
         container(
             column![
                 text("My Library").font(bold),
-                self.tab_button(lucide::house(), text("Home").font(bold), Route::Home),
+                self.tab_button(icons::home(), text("Home").font(bold), Route::Home),
                 self.tab_button(
-                    lucide::heart(),
+                    icons::heart(),
                     text("Favorites").font(bold),
                     Route::Favorites
                 ),
-                self.tab_button(lucide::disc_two(), text("Albums").font(bold), Route::Albums),
-                self.tab_button(lucide::music(), text("Tracks").font(bold), Route::Tracks),
-                self.tab_button(lucide::user(), text("Artists").font(bold), Route::Artists),
-                self.tab_button(lucide::tag(), text("Genres").font(bold), Route::Genres),
-                self.tab_button(lucide::settings(), text("Settings").font(bold), Route::Settings),
+                self.tab_button(icons::disc(), text("Albums").font(bold), Route::Albums),
+                self.tab_button(icons::music(), text("Tracks").font(bold), Route::Tracks),
+                self.tab_button(icons::user(), text("Artists").font(bold), Route::Artists),
+                self.tab_button(icons::tag(), text("Genres").font(bold), Route::Genres),
+                self.tab_button(icons::settings(), text("Settings").font(bold), Route::Settings),
                 space().height(28),
                 text("Playlists").font(bold),
                 self.playlists()
@@ -174,7 +173,7 @@ impl Sidebar {
                 image.map(|m| Cmd::ImageDriver(m).cmd_msg())
             } else {
                 // Or show a placeholder
-                lucide::disc_album().size(18).into()
+                icons::disc().size(18).into()
             };
 
             let title = widget::text(view.playlist.name.clone().unwrap_or("No title".to_owned()))

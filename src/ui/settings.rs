@@ -6,11 +6,10 @@ use iced::{
     Padding, Task, Theme,
     widget::{self, row},
 };
-use iced_fonts::lucide;
 
 use crate::{
     backend::api::endpoint_api::Endpoint,
-    ui::{ICMsg, ToOutMsg, components::style::header_text},
+    ui::{ICMsg, ToOutMsg, components::{icons, style::header_text}},
 };
 
 pub struct Settings {
@@ -69,7 +68,7 @@ impl Settings {
     }
 
     pub fn header(&self) -> Element<'_, SettingsMsg> {
-        let settings_icon = lucide::settings().size(36);
+        let settings_icon = icons::settings().size(36);
 
         let header = widget::container(row![
             settings_icon,

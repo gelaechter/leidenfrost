@@ -1,28 +1,25 @@
 use iced::{
-    ContentFit, Element,
-    Length::{self, Fill},
+    Alignment::Center,
+    Border, Color, ContentFit, Element,
+    Length::{self},
     Size, Task,
+    border::{self, Radius},
     task::{self},
     widget::{
-        self,
+        self, container,
         image::{self},
     },
 };
-use iced_fonts::lucide;
-use serde::Deserialize;
-use serde_json::json;
 use std::{
     collections::HashMap,
-    fmt,
-    hash::Hash,
-    io,
+    fmt, io,
     sync::{Arc, LazyLock},
     time::Duration,
 };
 use url::Url;
 use uuid::Uuid;
 
-use crate::backend::api::endpoint_api::Endpoint;
+use crate::ui::components::icons;
 
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
@@ -33,7 +30,7 @@ pub struct Manager {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    ImageDriver(Uuid, IMessage),
+    ImageDriver(Uuid, ImgMsg),
 }
 
 impl Manager {
@@ -85,48 +82,56 @@ impl Manager {
     }
 }
 
-/// An image that will automatically try to fetch the correct image size from
-/// the API this is done through the ImageSize trait of the API.
-/// An ImageSize implementer can be passed to the Image as a generic
+/// A network image which automatically fetches the image data from a given URL
 #[derive(Debug, Clone)]
 pub struct Image {
     /// The Url of this image
     /// TODO: Add a global Handle cache for Urls that are the same.
     url: Url,
-    /// TODO:
-    /// The preferred height of the image
+    /// The height of the image.
+    ///
+    /// This specifies the height of the container around the image. The image
+    /// will expand to fill that container.
     height: Option<Length>,
-    /// TODO:
-    /// The preferred width of the image
+    /// The width of the image.
+    ///
+    /// This specifies the width of the _container around the image_. The image
+    /// will expand to fill that container.
     width: Option<Length>,
-    /// TODO:
-    /// An aspect ratio determining width/height
-    aspect_ratio: Option<f32>,
+    border_radius: border::Radius,
     /// The size of the image container
-    container_size: Size<u32>,
+    measured_size: Size,
     /// Duration to wait before registering image visibility
     debounce: Option<Duration>,
     /// The images blur hash (if any)
     blurhash: Option<String>,
-    image_resizer: Option<Endpoint>,
+    /// This function gives the image the ability to modify the given
+    /// url with size parameters, based on its own measured dimensions
+    ///
+    /// This
+    resolution_strategy: Option<fn(Url, Size) -> Url>,
+    /// Automatically refetch the image if the image size changes?
+    ///
+    /// This does nothing if there is no sizing strategy
+    responsive_resolution: bool,
     /// The currently allocated image data (if any)
     status: Option<Content>,
-    /// Any running download task
+    /// Any running image download task
     download_task: Option<task::Handle>,
     /// Any running blurhash decoding task
     blurhash_task: Option<task::Handle>,
 }
 
 #[derive(Debug, Clone)]
-pub enum IMessage {
+pub enum ImgMsg {
     Hidden,
     /// The image has become visible
     Shown(Size),
     /// The image was resized
     Resized(Size),
-    /// Message that the image has been downloaded and allocated
+    /// The blurhash has been decoded
     BlurhashDecoded(Result<image::Handle, Error>),
-    /// Message that the image has been downloaded and allocated
+    /// The image has been downloaded and allocated
     Downloaded(Result<image::Handle, Error>),
 }
 
@@ -143,10 +148,10 @@ impl Image {
         Image {
             url: url.into(),
             blurhash: None,
-            image_resizer: None,
-            container_size: Size {
-                width: 16,
-                height: 16,
+            resolution_strategy: None,
+            measured_size: Size {
+                width: 16.0,
+                height: 16.0,
             },
             status: None,
             debounce: None,
@@ -154,8 +159,27 @@ impl Image {
             blurhash_task: None,
             height: None,
             width: None,
-            aspect_ratio: None,
+            border_radius: Radius::default(),
+            responsive_resolution: false,
         }
+    }
+
+    /// Sets the preferred height of the image
+    pub fn height(mut self, height: impl Into<Length>) -> Self {
+        self.height = Some(height.into());
+        self
+    }
+
+    /// Sets the preferred width of the image
+    pub fn width(mut self, width: impl Into<Length>) -> Self {
+        self.width = Some(width.into());
+        self
+    }
+
+    /// Sets the border radius of the image
+    pub fn border_radius(mut self, radius: impl Into<border::Radius>) -> Self {
+        self.border_radius = radius.into();
+        self
     }
 
     /// Adds an optional blurhash to the image
@@ -164,20 +188,33 @@ impl Image {
         self
     }
 
-    /// Activates automatic sizing
-    pub fn autosized(mut self, endpoint: Endpoint) -> Self {
-        self.image_resizer = Some(endpoint);
+    /// Sets the URL parametrization strategy so the image can fetch
+    /// the proper resolution of image and doesn't unneccesarily fetch
+    /// the fully sized image.
+    ///
+    /// E.g. `("xx://server/image", Size {32, 32}) ->
+    /// "xx://server/image?width=32&height=32"`
+    pub fn resolution_strategy(mut self, strategy: fn(Url, Size) -> Url) -> Self {
+        self.resolution_strategy = Some(strategy);
         self
     }
 
-    /// Decodes the blurhash (if any) beforehand
+    /// Makes the image respond to resolution changes by refetching the image
+    /// in a higher resolution if a sizing strategy has been specified through
+    /// [`Image::sizing_strategy`]
+    pub fn responsive_resolution(mut self, resp_res: bool) -> Self {
+        self.responsive_resolution = resp_res;
+        self
+    }
+
+    /// Decodes the blurhash (if any) beforehand;
     /// This is a blocking operation and should be treated as such
     pub fn pre_decode_blurhash(mut self, width: u32, height: u32) -> Self {
         if let Some(blurhash) = &self.blurhash
             && let Ok(pixels) = blurhash::decode(blurhash, width, height, 1.0)
         {
             let handle = image::Handle::from_rgba(width, height, pixels);
-            self.status = Some(Content::Blurhash(handle))
+            self.status = Some(Content::Blurhash(handle));
         }
         self
     }
@@ -185,7 +222,7 @@ impl Image {
     /// Debounces the visibility of the image
     ///
     /// This can be used together with [`Image::pre_decode_blurhash`] to
-    /// immediately show a blurhash but only start fetching the actual image
+    /// immediately show a blurhash, but only start fetching the actual image
     /// once it has been visible for a certain amount of time.
     pub fn debounce(mut self, duration: Duration) -> Self {
         self.debounce = Some(duration);
@@ -194,52 +231,69 @@ impl Image {
 }
 
 impl Image {
-    pub fn view<'a>(&'a self) -> Element<'a, IMessage> {
-        let image: Element<'_, IMessage> = match &self.status {
-            Some(Content::Blurhash(handle)) | Some(Content::Full(handle)) => {
+    pub fn view(&self) -> Element<'_, ImgMsg> {
+        let image: Element<'_, ImgMsg> = match &self.status {
+            Some(Content::Blurhash(handle) | Content::Full(handle)) => {
                 // Either the blurhash or the image have been loaded
                 widget::image(handle)
-                    // Use width an height instead of expand to enforce full size and prevent
-                    // resizing
-                    .width(Fill)
-                    .height(Fill)
-                    .content_fit(ContentFit::Cover)
-                    .border_radius(8)
+                    .expand(true)
+                    .content_fit(ContentFit::Contain)
+                    .border_radius(self.border_radius)
                     .into()
             }
-            Some(Content::Error) => lucide::image_off().size(16).into(),
-            None => lucide::image_down().into(),
+            Some(Content::Error) => widget::responsive(|s| {
+                let size = s.ratio(1.0).width;
+                icons::image_off().size(size - 16.0).into()
+            })
+            .into(),
+            None => widget::responsive(|s| {
+                let size = s.ratio(1.0).width;
+                icons::image_down().size(size - 16.0).into()
+            })
+            .into(),
         };
 
+        // Sensor that checks width/height the image is trying to occupy
         let mut sensor = widget::sensor(image)
-            .on_resize(IMessage::Resized)
-            .on_show(IMessage::Shown)
-            .on_hide(IMessage::Hidden);
+            .on_resize(ImgMsg::Resized)
+            .on_show(ImgMsg::Shown)
+            .on_hide(ImgMsg::Hidden);
 
         // Set an optional delay to debounce
         if let Some(delay) = self.debounce {
-            sensor = sensor.delay(delay)
+            sensor = sensor.delay(delay);
         }
 
-        sensor.into()
-        // widget::container(sensor)
-        //     .style(container::rounded_box)
-        //     .clip(true)
-        //     .center(64)
-        //     .into()
+        let mut container = widget::container(sensor)
+            .align_x(Center)
+            .align_y(Center)
+            .style(|_| {
+                container::background(Color::BLACK.scale_alpha(0.1))
+                    .border(Border::default().rounded(self.border_radius))
+            });
+
+        // Apply optional width/height
+        if let Some(width) = self.width {
+            container = container.width(width);
+        }
+        if let Some(height) = self.height {
+            container = container.height(height);
+        }
+
+        container.into()
     }
 
-    pub fn update(&mut self, message: IMessage) -> Task<IMessage> {
+    pub fn update(&mut self, message: ImgMsg) -> Task<ImgMsg> {
         match message {
             // Once the image is shown / size is changed
-            IMessage::Shown(size) => {
-                // Determine initial size
-                let size = Size {
-                    width: size.width.round() as u32,
-                    height: size.height.round() as u32,
-                };
-                if size.width < 1 || size.height < 1 {
-                    return Task::none();
+            ImgMsg::Shown(size) => {
+                if size.width < 16.0 || size.height < 16.0 {
+                    log::warn!(
+                        "Tiny image shown; Are you still layouting?\n\
+                        {size:?}\n\
+                        {}",
+                        self.url
+                    );
                 }
 
                 match self.status {
@@ -247,27 +301,28 @@ impl Image {
                     None if self.blurhash.is_some() => {
                         Task::batch([self.blurhash_task(), self.download_task()])
                     }
-                    // No image and no blurhash
-                    None => self.download_task(),
-                    // Blurhash rendered
-                    Some(Content::Blurhash(_)) => self.download_task(),
+                    // No image or just a blurhash
+                    None | Some(Content::Blurhash(_)) => self.download_task(),
                     // Do nothing if image already loaded or errored
                     Some(Content::Full(_) | Content::Error) => Task::none(),
                 }
             }
-            IMessage::Hidden => {
+            ImgMsg::Hidden => {
+                // If the image is hidden before it is fully downloaded
+                // the download may be aborted
                 if let Some(download_task) = &self.download_task.take() {
                     download_task.abort();
-                };
+                }
                 Task::none()
             }
-            IMessage::Resized(size) => {
+            ImgMsg::Resized(size) => {
                 // If auto sizing is active and the new resolution has greater dimensions
-                // then redownload the new resolution
-                if self.image_resizer.is_some()
-                    && size.width > self.container_size.width as f32
-                    && size.height > self.container_size.height as f32
+                if self.responsive_resolution
+                    && self.resolution_strategy.is_some()
+                    && size.width > self.measured_size.width
+                    && size.height > self.measured_size.height
                 {
+                    // Then redownload / rerender
                     match &self.blurhash {
                         // Either just download
                         None => self.download_task(),
@@ -278,7 +333,7 @@ impl Image {
                     Task::none()
                 }
             }
-            IMessage::BlurhashDecoded(handle) => {
+            ImgMsg::BlurhashDecoded(handle) => {
                 if let Ok(handle) = handle {
                     self.status = Some(Content::Blurhash(handle));
                 } else {
@@ -287,18 +342,17 @@ impl Image {
                 self.blurhash_task.take();
                 Task::none()
             }
-            IMessage::Downloaded(handle) => {
+            ImgMsg::Downloaded(handle) => {
                 if let Ok(handle) = handle {
                     self.status = Some(Content::Full(handle));
                     // Download has concluded so abort blurhash decoding
                     if let Some(blurhash_task) = &self.blurhash_task.take() {
                         blurhash_task.abort();
                     }
-                } else {
+                } else if self.status.is_none() {
                     self.status = Some(Content::Error);
                 }
                 self.download_task.take();
-
                 Task::none()
             }
         }
@@ -308,86 +362,92 @@ impl Image {
     /// automatically downloads a sized version based on the resizer
     async fn download(
         url: Url,
-        size: Size<u32>,
-        resizer: Option<Endpoint>,
+        measured_size: Size,
+        sizing_strategy: Option<fn(Url, Size) -> Url>,
     ) -> Result<Bytes, Error> {
-        let request = CLIENT.get(url);
-
-        // Choose
-        let request = match resizer {
-            Some(Endpoint::Jellyfin) => request.query(&json!({
-                "width": size.width,
-                "height": size.height,
-            })),
-            None => request,
+        // Change the image URL to be sized if there is a sizing strategy available
+        let url = if let Some(resize_strat) = sizing_strategy {
+            resize_strat(url, measured_size)
+        } else {
+            url
         };
 
+        let request = CLIENT.get(url);
         let bytes = request.send().await?.error_for_status()?.bytes().await?;
 
         Ok(Bytes(bytes))
     }
 
     /// Asynchronously decodes the blurhash for the given size
-    async fn decode_blurhash(blurhash: String, size: Size<u32>) -> Result<Rgba, Error> {
+    #[allow(clippy::cast_possible_truncation)] // Sizes are relatively small
+    #[allow(clippy::cast_sign_loss)] // And they shouldn't be negative either
+    async fn decode_blurhash(blurhash: String, size: Size) -> Result<Rgba, Error> {
+        let width = size.width.round() as u32;
+        let height = size.height.round() as u32;
+
+        // Decode the blurhash (this is a blocking operation)
         tokio::task::spawn_blocking(move || {
-            let pixels = blurhash::decode(&blurhash, size.width, size.height, 1.0)?;
+            let pixels = blurhash::decode(&blurhash, width, height, 1.0)?;
 
             Ok(Rgba {
-                width: size.width,
-                height: size.height,
+                width,
+                height,
                 pixels: Bytes(pixels.into()),
             })
         })
         .await?
     }
 
-    fn download_task(&mut self) -> Task<IMessage> {
+    fn download_task(&mut self) -> Task<ImgMsg> {
         let Self {
             url,
-            container_size: size,
-            image_resizer,
-            download_task: _download_task,
+            measured_size,
+            resolution_strategy: sizing_strategy,
+            download_task,
             ..
         } = self;
 
         // Abort previous download (if any)
-        if let Some(download_handle) = _download_task.take() {
+        if let Some(download_handle) = download_task.take() {
             download_handle.abort();
         }
 
         // Start new download
-        let (download_task, download_handle) =
-            Task::future(Self::download(url.clone(), *size, image_resizer.clone()))
-                .and_then(|bytes| {
-                    // After downloading directly allocate the image so we only start overwriting the
-                    // Blurhashes once the image is fully allocated. This way we get a guarantee that the
-                    // image is actually drawn once we replace the Blurhash instead of being deferred to the
-                    // renderer.
-                    //
-                    // > When you obtain an Allocation explicitly, you get the guarantee that using a Handle
-                    // > will draw the corresponding image immediately in the next frame.
-                    image::allocate(image::Handle::from_bytes(bytes))
-                        .map_err(|_| Error::ImageDecodingFailed)
-                })
-                .and_then(|a| Task::done(Ok(a.handle().clone())))
-                .map(IMessage::Downloaded)
-                .abortable();
+        let (task, download_handle) = Task::future(Self::download(
+            url.clone(),
+            *measured_size,
+            *sizing_strategy,
+        ))
+        .and_then(|bytes| {
+            // After downloading directly allocate the image so we only start overwriting the
+            // Blurhashes once the image is fully allocated. This way we get a guarantee that the
+            // image is actually drawn once we replace the Blurhash, instead of being deferred to the
+            // renderer.
+            //
+            // > [`image::allocate`]:
+            // > When you obtain an Allocation explicitly, you get the guarantee that using a Handle
+            // > will draw the corresponding image immediately in the next frame.
+            image::allocate(image::Handle::from_bytes(bytes)).map_err(|_| Error::ImageDecodingFailed)
+        })
+        .and_then(|a| Task::done(Ok(a.handle().clone())))
+        .map(ImgMsg::Downloaded)
+        .abortable();
 
         // Set download handle and return value
-        *_download_task = Some(download_handle.abort_on_drop());
-        download_task
+        *download_task = Some(download_handle.abort_on_drop());
+        task
     }
 
-    fn blurhash_task(&mut self) -> Task<IMessage> {
+    fn blurhash_task(&mut self) -> Task<ImgMsg> {
         let Self {
-            container_size: size,
+            measured_size,
             blurhash,
-            blurhash_task: _blurhash_task,
+            blurhash_task,
             ..
         } = self;
 
         // Abort previous task (if any)
-        if let Some(blurhash_handle) = _blurhash_task.take() {
+        if let Some(blurhash_handle) = blurhash_task.take() {
             blurhash_handle.abort();
         }
 
@@ -397,7 +457,7 @@ impl Image {
                 .clone()
                 .expect("The blurhash_task function should only be called when blurhash is Some")
                 .clone(),
-            *size,
+            *measured_size,
         ))
         // Then allocate image
         .and_then(|rgba| {
@@ -414,21 +474,13 @@ impl Image {
                 image::Handle::from_rgba(width, height, pixels),
             ))
         })
-        .map(IMessage::BlurhashDecoded)
+        .map(ImgMsg::BlurhashDecoded)
         .abortable();
 
         // Set blurhash handle and return value
         self.blurhash_task = Some(blurhash_handle.abort_on_drop());
         blurhash_task
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
-pub struct Id(u32);
-
-#[derive(Debug, Clone)]
-pub struct Blurhash {
-    pub rgba: Rgba,
 }
 
 #[derive(Clone)]
@@ -438,6 +490,8 @@ pub struct Rgba {
     pub pixels: Bytes,
 }
 
+// We don't want to log all the bytes
+#[allow(clippy::missing_fields_in_debug)]
 impl fmt::Debug for Rgba {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Rgba")

@@ -2424,25 +2424,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iced_fonts"
-version = "0.3.0"
-dependencies = [
- "iced_core",
- "iced_fonts_macros",
- "iced_widget",
-]
-
-[[package]]
-name = "iced_fonts_macros"
-version = "0.3.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
- "ttf-parser",
-]
-
-[[package]]
 name = "iced_futures"
 version = "0.15.0-dev"
 dependencies = [
@@ -2944,7 +2925,6 @@ dependencies = [
  "env_logger",
  "http-serde",
  "iced",
- "iced_fonts",
  "libmpv2",
  "log",
  "mpris-server",

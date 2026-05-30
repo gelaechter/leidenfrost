@@ -6,7 +6,8 @@ use iced::{
     Padding, font,
     widget::{self, Container, button, row, text},
 };
-use iced_fonts::lucide;
+
+use crate::ui::components::icons;
 
 /// The header text of a column used in tables
 pub fn column_header(content: &str) -> widget::Text<'_> {
@@ -16,14 +17,14 @@ pub fn column_header(content: &str) -> widget::Text<'_> {
 /// Slightly transparent text giving the notion of being muted
 pub fn muted_text(theme: &iced::Theme) -> widget::text::Style {
     widget::text::Style {
-        color: Some(theme.palette().background.base.text.scale_alpha(0.7)),
+        color: Some(theme.palette().background.base.text.scale_alpha(0.6)),
     }
 }
 
 /// A round button usually placed as a header to signify
 /// play everything on this page
 pub fn header_play_button<'a, T: 'a>() -> widget::Button<'a, T> {
-    widget::button(widget::container(lucide::play().size(20)).center(Fill))
+    widget::button(widget::container(icons::play_filled().size(20)).center(Fill))
         .height(42)
         .width(42)
         .style(|theme, status| {
@@ -62,7 +63,7 @@ pub fn default_header<'a, Msg: Clone + 'a>(
 }
 
 /// Provides an em dash String to signify missing data
-pub fn em_dash() -> String {
-    static EM_DASH: &str = "—";
+pub fn EM_DASH() -> String {
+    const EM_DASH: &str = "—";
     EM_DASH.to_string()
 }

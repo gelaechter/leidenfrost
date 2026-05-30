@@ -6,8 +6,7 @@ use url::Url;
 
 use crate::backend::{
     api::jellyfin::errors::ApiError,
-    data_view::{AlbumView, PlaylistView, TrackView},
-    db::models::{Album, Artist, Disc, Genre, Playlist, Track},
+    data_view::{AlbumView, ArtistView, DiscView, GenreView, PlaylistView, TrackView},
 };
 
 /// The different Endpoints that are currently supported
@@ -35,11 +34,24 @@ pub trait ImageSize {
 }
 
 pub enum SearchResult {
-    Track(Track),
-    Album(Album),
-    Playlist(Playlist),
-    Genre(Genre),
-    LyricMatch { matched_lyric: String, track: Track },
+    Track(TrackView),
+    Album(AlbumView),
+    Playlist(PlaylistView),
+    Genre(GenreView),
+    LyricMatch {
+        matched_lyric: Option<String>,
+        track: TrackView,
+    },
+}
+
+/// Differentiating between these kinds of albums can technically be done
+/// through checking if the artist is part of the albums album artists list
+/// but doing it this way is nicer IMO
+pub struct ArtistAlbums {
+    /// Albums an artist has a track on
+    pub appears_on: Vec<AlbumView>,
+    /// Albums where the artist is credited as album artist
+    pub created: Vec<AlbumView>,
 }
 
 pub type Result<T> = result::Result<T, ApiError>;
@@ -189,26 +201,26 @@ pub trait MusicEndpoint {
         &self,
         album_id: String,
         params: GetTracksParams,
-    ) -> Result<Vec<Disc>>;
+    ) -> Result<Vec<DiscView>>;
 
     /// Fetches all albums
     async fn get_albums(&self, params: GetAlbumsParams) -> Result<Vec<AlbumView>>;
 
     /// Fetches albums from an artist
-    async fn get_albums_from_artist(
+    async fn get_artist_albums(
         &self,
         artist_id: String,
         params: GetAlbumsParams,
-    ) -> Result<Vec<AlbumView>>;
+    ) -> Result<ArtistAlbums>;
 
     /// Fetches an artist
-    async fn get_artist(&self, artist_id: String) -> Result<Artist>;
+    async fn get_artist(&self, artist_id: String) -> Result<ArtistView>;
 
     /// Fetches all artists
-    async fn get_artists(&self, params: GetArtistsParams) -> Result<Vec<Artist>>;
+    async fn get_artists(&self, params: GetArtistsParams) -> Result<Vec<ArtistView>>;
 
     /// Fetches all genres
-    async fn get_genres(&self, params: GetGenresParams) -> Result<Vec<Genre>>;
+    async fn get_genres(&self, params: GetGenresParams) -> Result<Vec<GenreView>>;
 
     /// Fetches all playlists
     async fn get_playlists(&self, params: GetPlaylistParams) -> Result<Vec<PlaylistView>>;

@@ -13,23 +13,19 @@ use iced::{
         text::{self, Wrapping},
     },
 };
-use iced_fonts::lucide;
 use url::Url;
 
 use crate::{
     backend::{
         api::{
-            endpoint_api::{MusicEndpoint, GetAlbumsParams, UserPasswordAuth},
+            endpoint_api::{GetAlbumsParams, MusicEndpoint, UserPasswordAuth},
             jellyfin::api::JellyfinApi,
         },
         data_view::{AlbumView, RelatedArtist},
     },
     ui::{
         components::{
-            image::{self, Image},
-            style::{column_header, default_header, muted_text},
-            table::{self, Column, Table},
-            utils::{IntoLinks, format_duration},
+            icons, image::{self, Image}, style::{column_header, default_header, muted_text}, table::{self, Column, Table}, utils::{IntoLinks, format_duration}
         },
         router::Route,
     },
@@ -159,7 +155,7 @@ impl From<AlbumView> for AlbumRow {
 #[derive(Debug, Clone)]
 pub enum AlbumCellMsg {
     /// A driver for images
-    ImageDriver(image::IMessage),
+    ImageDriver(image::ImgMsg),
     /// The route has been changed (e.g. through clicking an album)
     ChangeRoute(Route),
 }
@@ -202,7 +198,7 @@ pub fn combined_title_column() -> Column<AlbumRow, AlbumCellMsg> {
                 image.view().map(AlbumCellMsg::ImageDriver)
             } else {
                 // Or show a placeholder
-                lucide::disc_album().size(18).into()
+                icons::disc().size(18).into()
             };
 
             // Title
@@ -263,7 +259,7 @@ pub fn duration_column() -> Column<AlbumRow, AlbumCellMsg> {
                 widget::container(if size.width >= 80.0 {
                     column_header("Duration")
                 } else {
-                    lucide::clock_two()
+                    icons::clock()
                 })
                 .center(Fill)
                 .into()

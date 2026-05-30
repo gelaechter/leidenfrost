@@ -257,7 +257,7 @@ pub enum ExtraType {
     Unknown,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct BaseItemDtoImageBlurHashes {
     #[serde(default, deserialize_with = "blur_entries_from_map")]

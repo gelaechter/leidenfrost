@@ -1,25 +1,22 @@
 use iced::{
-    Border, Element,
+    Element,
     Length::{self, Fill, FillPortion},
     Task, Theme,
     alignment::Horizontal,
-    border::Radius,
     widget::{
-        self, Container, column,
+        self, Container, button, column,
         container::Style,
         row,
         text::{self, Wrapping},
     },
 };
-use iced_fonts::lucide;
 
 use crate::{
     backend::data_view::RelatedArtist,
     ui::{
         ToCmdMsg, ToOutMsg,
         components::{
-            style::muted_text,
-            utils::{IntoLink, IntoLinks, format_duration},
+            icons, style::{EM_DASH, muted_text}, utils::{IntoLink, IntoLinks, format_duration}
         },
         player::{PlayerEvent, RepeatMode},
         router::Route,
@@ -178,10 +175,10 @@ impl PlayerBar {
     fn buttons(&self) -> Element<'_, Out> {
         const BUTTON_SIZE: u32 = 20;
 
-        let stop_button = player_button(lucide::square().size(BUTTON_SIZE));
+        let stop_button = player_button(icons::square().size(BUTTON_SIZE));
 
         let shuffle_button = player_button(
-            lucide::shuffle()
+            icons::shuffle()
                 .style(|t: &Theme| text::Style {
                     color: self.shuffle.then_some(t.palette().primary.strong.color),
                 })
@@ -190,25 +187,25 @@ impl PlayerBar {
         .on_press(Out::Shuffle(!self.shuffle));
 
         let skip_back_button =
-            player_button(lucide::skip_back().size(BUTTON_SIZE)).on_press(Out::Previous);
+            player_button(icons::skip_back().size(BUTTON_SIZE)).on_press(Out::Previous);
 
         let pause_button = player_button(if self.paused {
-            lucide::play().size(BUTTON_SIZE)
+            icons::play().size(BUTTON_SIZE)
         } else {
-            lucide::pause().size(BUTTON_SIZE)
+            icons::pause().size(BUTTON_SIZE)
         })
         .on_press(Out::Pause(!self.paused));
 
         let skip_forward_button =
-            player_button(lucide::skip_forward().size(BUTTON_SIZE)).on_press(Out::Next);
+            player_button(icons::skip_forward().size(BUTTON_SIZE)).on_press(Out::Next);
 
         let repeat_button = player_button(
             match self.repeat_mode {
-                RepeatMode::None => lucide::repeat(),
-                RepeatMode::Song => lucide::repeat_one().style(|t: &Theme| text::Style {
+                RepeatMode::None => icons::repeat(),
+                RepeatMode::Song => icons::repeat_one().style(|t: &Theme| text::Style {
                     color: Some(t.palette().primary.strong.color),
                 }),
-                RepeatMode::Queue => lucide::repeat().style(|t: &Theme| text::Style {
+                RepeatMode::Queue => icons::repeat().style(|t: &Theme| text::Style {
                     color: Some(t.palette().primary.strong.color),
                 }),
             }
@@ -222,7 +219,7 @@ impl PlayerBar {
         }));
 
         let play_random_button =
-            player_button(lucide::dice_five().size(BUTTON_SIZE)).on_press(Out::PlayRandom);
+            player_button(icons::dices().size(BUTTON_SIZE)).on_press(Out::PlayRandom);
 
         // Button container
         widget::container(row![
@@ -241,10 +238,10 @@ impl PlayerBar {
 
     fn right_console(&self) -> Container<'_, ICMsg<Cmd, Out>> {
         let mute_button = match self.volume {
-            0 => lucide::volume(),
-            1..50 => lucide::volume_one(),
-            50..=100 => lucide::volume_two(),
-            _ => lucide::volume_off(),
+            0 => icons::volume(),
+            1..50 => icons::volume_one(),
+            50..=100 => icons::volume_two(),
+            _ => icons::volume_x(),
         };
 
         widget::container(row![
@@ -303,7 +300,7 @@ impl PlayerBar {
             .map(|t| {
                 t.album_name
                     .clone()
-                    .unwrap_or("-".to_owned())
+                    .unwrap_or(EM_DASH())
                     .link(Route::Album(t.track.id.clone()), Out::ChangeRoute)
                     .style(muted_text)
                     .wrapping(Wrapping::None)
@@ -315,11 +312,5 @@ impl PlayerBar {
 }
 
 fn player_button<'a>(content: impl Into<Element<'a, Out>>) -> widget::Button<'a, Out> {
-    widget::button(content).style(|_, _| widget::button::Style {
-        border: Border {
-            radius: Radius::new(2),
-            ..Default::default()
-        },
-        ..Default::default()
-    })
+    widget::button(content).style(button::text)
 }

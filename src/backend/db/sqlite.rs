@@ -4,13 +4,15 @@ type Result<T> = color_eyre::Result<T>;
 
 // TODO: Update path
 const DB_PATH: &str = "/home/***REMOVED***/Projects/randale_iced/test.sqlite";
+// Read/Write/Create
+const MODE: &str = "rwc";
 
 pub struct DB;
 
 impl DB {
     pub async fn open() -> Result<DatabaseConnection> {
         let db: DatabaseConnection =
-            Database::connect(format!("sqlite://{DB_PATH}?mode=rwc")).await?;
+            Database::connect(format!("sqlite://{DB_PATH}?mode={MODE}")).await?;
 
         // TODO: Naive check if database works
         db.ping().await?;

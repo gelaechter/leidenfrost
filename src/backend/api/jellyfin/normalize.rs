@@ -6,18 +6,20 @@ use uuid::Uuid;
 use crate::backend::{
     api::{
         endpoint_api::{
-            AlbumSorting, MusicEndpoint, ArtistSorting, GenreSorting, PlaylistSorting, TrackSorting,
+            AlbumSorting, ArtistSorting, GenreSorting, MusicEndpoint, PlaylistSorting, TrackSorting,
         },
         jellyfin::{
             api::JellyfinApi,
             data::{
-                BaseItemDto, BaseItemImageTags, BaseItemKind, ImageBlurHash, ItemSortBy,
-                NameGuidPair, UserItemDataDto,
+                BaseItemDto, BaseItemDtoImageBlurHashes, BaseItemImageTags, BaseItemKind,
+                ImageBlurHash, ItemSortBy, NameGuidPair, UserItemDataDto,
             },
         },
     },
-    data_view::{AlbumView, PlaylistView, RelatedArtist, RelatedGenre, TrackView},
-    db::models::{Album, Playlist, Track},
+    data_view::{
+        AlbumView, ArtistView, GenreView, PlaylistView, RelatedArtist, RelatedGenre, TrackView,
+    },
+    db::models::{Album, Artist, Genre, Playlist, Track},
 };
 
 pub trait Normalize<T, R>: Sized + MusicEndpoint {
@@ -308,6 +310,139 @@ impl Normalize<BaseItemDto, AlbumView> for JellyfinApi {
                 .into_iter()
                 .map(|NameGuidPair { id, name }| RelatedGenre { id, name })
                 .collect(),
+            duration: run_time_ticks.map(|t| t / 10_000_000),
+        }
+    }
+}
+
+impl Normalize<BaseItemDto, GenreView> for JellyfinApi {
+    fn normalize(&self, value: BaseItemDto) -> GenreView {
+        let BaseItemDto {
+            id,
+            image_blur_hashes,
+            image_tags,
+            name,
+            type_,
+            ..
+        } = value;
+
+        // Check if our item is actually an audio track
+        // TODO: Should probably be recoverable but since we should deserialize based on
+        // BaseItemKind this is fine
+        assert!(
+            matches!(type_, Some(BaseItemKind::MusicGenre)),
+            "Tried to normalize a non BaseItemKind::MusicGenre as a Genre"
+        );
+
+        let genre = Genre {
+            name,
+            image_url: {
+                let id = match image_tags {
+                    // If the playlist has a primary image
+                    Some(BaseItemImageTags {
+                        primary: Some(_), ..
+                    }) => id.clone(), // then we need the playlist id
+                    _ => None,
+                };
+
+                id.map(|id| {
+                    self.url()
+                        .join(&format!("/Items/{id}/Images/Primary"))
+                        .unwrap()
+                        .into()
+                })
+            },
+            image_blur_hash: image_blur_hashes.and_then(|blurhashes| {
+                blurhashes
+                    .primary
+                    .or_empty()
+                    .into_iter()
+                    .next()
+                    .map(|ImageBlurHash { blurhash, .. }| blurhash)
+            }),
+            id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+        };
+
+        GenreView { genre }
+    }
+}
+
+impl Normalize<BaseItemDto, ArtistView> for JellyfinApi {
+    fn normalize(&self, value: BaseItemDto) -> ArtistView {
+        let BaseItemDto {
+            backdrop_image_tags,
+            id,
+            image_blur_hashes,
+            image_tags,
+            name,
+            run_time_ticks,
+            type_,
+            user_data,
+            ..
+        } = value;
+
+        let UserItemDataDto {
+            is_favorite,
+            rating,
+            play_count,
+            ..
+        } = user_data.unwrap_or_default();
+
+        // Check if our item is actually an audio track
+        // TODO: Should probably be recoverable but since we should deserialize based on
+        // BaseItemKind this is fine
+        assert!(
+            matches!(type_, Some(BaseItemKind::MusicArtist)),
+            "Tried to normalize a non BaseItemKind::MusicArtist as an Artist"
+        );
+
+        let BaseItemDtoImageBlurHashes {
+            primary, backdrop, ..
+        } = image_blur_hashes.unwrap_or_default();
+
+        let artist = Artist {
+            name,
+            image_url: {
+                let id = match image_tags {
+                    // If the playlist has a primary image
+                    Some(BaseItemImageTags {
+                        primary: Some(_), ..
+                    }) => id.clone(), // then we need the playlist id
+                    _ => None,
+                };
+
+                id.map(|id| {
+                    self.url()
+                        .join(&format!("/Items/{id}/Images/Primary"))
+                        .unwrap()
+                        .into()
+                })
+            },
+            image_blur_hash: primary
+                .or_empty()
+                .into_iter()
+                .next()
+                .map(|ImageBlurHash { blurhash, .. }| blurhash),
+            id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+            biography: None,
+            background_image_url: backdrop_image_tags.or_empty().first().map(|id| {
+                self.url()
+                    .join(&format!("Items/{id}/Images/Backdrop"))
+                    .unwrap()
+                    .into()
+            }),
+            background_image_blurhash: backdrop
+                .or_empty()
+                .into_iter()
+                .next()
+                .map(|ImageBlurHash { blurhash, .. }| blurhash),
+            user_favorite: is_favorite,
+            user_rating: rating.map(|f| f.round() as i64),
+            play_count,
+        };
+
+        ArtistView {
+            artist,
             duration: run_time_ticks.map(|t| t / 10_000_000),
         }
     }

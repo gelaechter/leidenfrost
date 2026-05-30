@@ -25,7 +25,7 @@ pub struct Model {
     pub album_id: String,
     /// The disc this track belongs to
     pub disc_number: i64,
-    /// (album_id, disc_number) is the composite key for the discs
+    /// `(album_id, disc_number)` is the composite key for the discs
     #[sea_orm(
         belongs_to,
         from = "(album_id, disc_number)",

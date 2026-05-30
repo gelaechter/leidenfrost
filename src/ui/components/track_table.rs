@@ -5,8 +5,8 @@ use std::{
     time::Duration,
 };
 
-use crate::ui::components::utils::IntoLink;
-use crate::ui::components::utils::IntoLinks;
+use crate::ui::components::{icons, utils::IntoLinks};
+use crate::ui::components::{style::EM_DASH, utils::IntoLink};
 use crate::{backend::data_view::RelatedGenre, ui::components::utils::format_duration};
 use iced::{
     Element,
@@ -18,7 +18,6 @@ use iced::{
         text::{self, Wrapping},
     },
 };
-use iced_fonts::lucide;
 
 use crate::{
     backend::data_view::{RelatedArtist, TrackView},
@@ -57,6 +56,7 @@ impl From<TrackView> for TrackRow {
                 .blurhash_maybe(blurhash)
                 .pre_decode_blurhash(64, 64)
                 .debounce(Duration::from_millis(500))
+                .border_radius(8)
         });
 
         TrackRow {
@@ -71,7 +71,7 @@ impl From<TrackView> for TrackRow {
 #[derive(Debug, Clone)]
 pub enum TrackCellMsg {
     /// A driver for images
-    ImageDriver(image::IMessage),
+    ImageDriver(image::ImgMsg),
     /// The route has been changed (e.g. through clicking an album)
     ChangeRoute(Route),
 }
@@ -114,7 +114,7 @@ pub fn duration_column() -> Column<TrackRow, TrackCellMsg> {
                 widget::container(if size.width >= 80.0 {
                     column_header("Duration")
                 } else {
-                    lucide::clock_two()
+                    icons::clock()
                 })
                 .center(Fill)
                 .into()
@@ -140,7 +140,11 @@ pub fn album_column() -> Column<TrackRow, TrackCellMsg> {
         || column_header("Album").into(),
         |row: &TrackRow| {
             // Display the album name as clickable link that takes you there
-            let album_name = row.view.album_name.clone().unwrap_or("Unknown album".to_owned());
+            let album_name = row
+                .view
+                .album_name
+                .clone()
+                .unwrap_or("Unknown album".to_owned());
 
             album_name
                 .link(
@@ -167,7 +171,7 @@ pub fn combined_title_column() -> Column<TrackRow, TrackCellMsg> {
                 ..
             } = row;
 
-            let track_title = track.title.clone().unwrap_or("No title".to_owned());
+            let track_title = track.title.clone().unwrap_or(EM_DASH());
             let artists = artists.clone();
 
             // Image
@@ -176,11 +180,12 @@ pub fn combined_title_column() -> Column<TrackRow, TrackCellMsg> {
                 image.view().map(TrackCellMsg::ImageDriver)
             } else {
                 // Or show a placeholder
-                lucide::disc_album().size(18).into()
+                icons::disc().size(18).into()
             };
 
             // Title
             let title = widget::text(track_title)
+                .style(text::base)
                 .wrapping(Wrapping::None)
                 .ellipsis(text::Ellipsis::End);
 

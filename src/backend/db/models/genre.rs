@@ -6,8 +6,9 @@ use sea_orm::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: String,
-    pub name: String,
+    pub name: Option<String>,
     pub image_url: Option<super::OrmUrl>,
+    pub image_blur_hash: Option<String>,
     #[sea_orm(has_many, via = "track_genres")]
     pub tracks: HasMany<super::track::Entity>,
 }
