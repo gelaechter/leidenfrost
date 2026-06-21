@@ -4,6 +4,11 @@ use iced::{
     advanced::text,
     widget::{self, Text, text::Catalog},
 };
+
+pub fn jellyfin<'a, Theme: Catalog + 'a, Renderer: text::Renderer<Font = Font>>() -> Text<'a, Theme, Renderer> {
+    widget::text('\u{f160}').font("leidenfrost")
+}
+
 pub fn image_down<'a, Theme: Catalog + 'a, Renderer: text::Renderer<Font = Font>>() -> Text<'a, Theme, Renderer> {
     widget::text('\u{f4b7}').font("leidenfrost")
 }

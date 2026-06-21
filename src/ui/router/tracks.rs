@@ -1,18 +1,27 @@
+use std::sync::Arc;
+
 use iced::{
     Element, Task,
+    wgpu::hal::Api,
     widget::{self, column},
 };
-use url::Url;
 
 use crate::{
-    backend::api::{
-        endpoint_api::{GetTracksParams, MusicEndpoint, Pagination, UserPasswordAuth},
-        jellyfin::api::JellyfinApi,
+    backend::{
+        api::{
+            endpoint_api::{GetTracksParams, MusicEndpoint, Pagination},
+            jellyfin::errors::ApiError,
+        },
+        data_view::TrackView,
     },
-    ui::components::{
-        style::default_header,
-        table::{self},
-        track_table::{self, TrackCellMsg, TrackRow, TrackTable},
+    ui::{
+        ICMsg, ToCmdMsg, ToErrMsg,
+        components::{
+            style::default_header,
+            table::{self},
+            track_table::{self, TrackCellMsg, TrackRow, TrackTable, TrackTableMsg},
+        },
+        router::settings::ENDPOINTS,
     },
 };
 
@@ -36,78 +45,104 @@ impl Default for Tracks {
 }
 
 #[derive(Debug, Clone)]
-pub enum Message {
+pub enum Cmd {
     /// Initial track fetching
     FetchTracks,
     /// The tracks have been fetched
+    TracksFetched(Vec<TrackView>),
+    /// The tracks have been fetched
     RowsCreated(Vec<TrackRow>),
     /// A driver for the table
-    TableDriver(table::Message<TrackCellMsg>),
+    TableDriver(Box<TrackTableMsg>),
     /// The user requests to play all tracks
     PlayAllTracks,
 }
 
-impl Tracks {
-    pub fn view(&self) -> Element<'_, Message> {
-        let header = default_header("Tracks", Message::PlayAllTracks);
+#[derive(Debug, Clone)]
+pub enum Out {
+    /// Play a single track by overriding the queue
+    PlayTrack {
+        /// The new queue
+        tracks: Vec<TrackView>,
+        /// The current song in the queue
+        index: usize,
+    },
+}
 
-        let tracks = column![header, self.track_table.view().map(Message::TableDriver)];
+pub type TracksMsg = ICMsg<Cmd, Out, ApiError>;
+
+impl Tracks {
+    pub fn view(&self) -> Element<'_, TracksMsg> {
+        let header = default_header("Tracks", Cmd::PlayAllTracks.cmd_msg());
+
+        let tracks = column![
+            header,
+            self.track_table
+                .view()
+                .map(|c| Cmd::TableDriver(Box::new(c)).cmd_msg())
+        ];
 
         widget::sensor(tracks)
-            .on_show(|_| Message::FetchTracks)
+            .on_show(|_| Cmd::FetchTracks.cmd_msg())
             .key("tracks")
             .into()
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
-        match message {
-            Message::FetchTracks => {
+    pub fn update(&mut self, message: impl Into<TracksMsg>) -> Task<TracksMsg> {
+        message.into().cmd(|cmd| match cmd {
+            Cmd::FetchTracks => {
                 // Only fetch first time
                 if !self.track_table.rows().is_empty() {
                     return Task::none();
                 }
 
-                Task::future(async {
-                    // TODO: Replace with global state
-                    let jf = JellyfinApi::auth_user_password(
-                        Url::parse("http://***REMOVED***").unwrap(),
-                        "***REMOVED***".to_string(),
-                        "***REMOVED***".to_string(),
-                    )
-                    .await;
+                Task::perform(
+                    async {
+                        let endpoints = ENDPOINTS.read().await;
 
-                    jf.get_tracks(GetTracksParams {
-                        pagination: Some(Pagination {
-                            start: 0,
-                            limit: 100,
-                        }),
-                        sorting: None,
-                    })
-                    .await
-                    .unwrap()
-                })
-                .then(|tracks| {
-                    // After fetching convert the track_views into rowdata
-                    Task::perform(
-                        async {
-                            // [`TrackRow::from::<TrackView>()`] is blocking
-                            tokio::task::spawn_blocking(move || {
-                                tracks.into_iter().map(TrackRow::from).collect()
+                        endpoints
+                            .get_tracks(GetTracksParams {
+                                pagination: Some(Pagination {
+                                    start: 0,
+                                    limit: 100,
+                                }),
+                                sorting: None,
                             })
                             .await
-                            .unwrap()
-                        },
-                        Message::RowsCreated,
-                    )
-                })
+                    },
+                    // TODO: There is probably a better way to do this
+                    |r| match r {
+                        Ok(tracks) => Cmd::TracksFetched(tracks).cmd_msg(),
+                        Err(e) => e.err_msg(),
+                    },
+                )
             }
-            Message::RowsCreated(row_data) => {
+            Cmd::TracksFetched(tracks) => {
+                // After fetching convert the track_views into rowdata
+                Task::perform(
+                    async {
+                        // [`TrackRow::from::<TrackView>()`] is blocking
+                        tokio::task::spawn_blocking(move || {
+                            tracks.into_iter().map(TrackRow::from).collect()
+                        })
+                        .await
+                    },
+                    |result| match result {
+                        Ok(r) => Cmd::RowsCreated(r).cmd_msg(),
+                        Err(e) => ApiError::JoinError.err_msg(),
+                    },
+                )
+            }
+            Cmd::RowsCreated(row_data) => {
                 // Insert tracks
                 self.track_table.extend(row_data);
                 Task::none()
             }
-            Message::TableDriver(m) => self.track_table.update(m).map(Message::TableDriver),
-            Message::PlayAllTracks => Task::none(),
-        }
+            Cmd::TableDriver(m) => self
+                .track_table
+                .update(*m)
+                .map(|c| Cmd::TableDriver(Box::new(c)).cmd_msg()),
+            Cmd::PlayAllTracks => Task::none(),
+        })
     }
 }

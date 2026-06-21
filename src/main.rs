@@ -10,14 +10,16 @@ pub mod backend;
 pub mod ui;
 
 pub const LEIDENFROST_ICONS: Font = Font::new("leidenfrost");
+pub const PASSWORD_FONT: Font = Font::new("Password");
 
 fn main() {
     env_logger::Builder::from_env(Env::default().default_filter_or("warn")).init();
 
-    iced::application(App::default, App::update, App::view)
+    iced::application(App::new, App::update, App::view)
         .subscription(App::subscription)
         .theme(App::theme)
         .font(include_bytes!("ui/components/icons/leidenfrost.ttf").as_slice())
+        .font(include_bytes!("ui/components/icons/password.ttf"))
         .default_font("leidenfrost".into())
         .run()
         .unwrap();

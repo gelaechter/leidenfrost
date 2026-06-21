@@ -159,6 +159,7 @@ impl Normalize<BaseItemDto, TrackView> for JellyfinApi {
             id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
             track_number: index_number,
             user_favorite: is_favorite,
+            endpoint_id: self.get_id(),
         };
 
         TrackView {
@@ -203,6 +204,7 @@ impl Normalize<BaseItemDto, PlaylistView> for JellyfinApi {
         );
 
         let playlist = Playlist {
+            endpoint_id: self.get_id(),
             name,
             image_url: {
                 let id = match image_tags {
@@ -296,6 +298,7 @@ impl Normalize<BaseItemDto, AlbumView> for JellyfinApi {
             }),
             id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
             user_favorite: is_favorite,
+            endpoint_id: self.get_id(),
         };
 
         AlbumView {
@@ -361,6 +364,7 @@ impl Normalize<BaseItemDto, GenreView> for JellyfinApi {
                     .map(|ImageBlurHash { blurhash, .. }| blurhash)
             }),
             id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+            endpoint_id: self.get_id(),
         };
 
         GenreView { genre }
@@ -439,6 +443,7 @@ impl Normalize<BaseItemDto, ArtistView> for JellyfinApi {
             user_favorite: is_favorite,
             user_rating: rating.map(|f| f.round() as i64),
             play_count,
+            endpoint_id: self.get_id(),
         };
 
         ArtistView {

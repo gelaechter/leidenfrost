@@ -18,9 +18,13 @@ pub enum Lyrics {
 pub struct Model {
     /// An ID that identifies this track uniquely
     /// This ID must be unique across endpoints while being deterministic
-    /// The recommended approach is using: endpoint identifier (e.g. URL) + endpoint local ID
+    /// The recommended approach is using: endpoint identifier (e.g. URL) +
+    /// endpoint local ID
     #[sea_orm(primary_key)]
     pub id: String,
+    pub endpoint_id: String,
+    #[sea_orm(belongs_to, from = "endpoint_id", to = "id")]
+    pub endpoint: HasOne<super::endpoint::Entity>,
     /// The album this track belongs to
     pub album_id: String,
     /// The disc this track belongs to

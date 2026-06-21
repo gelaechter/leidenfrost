@@ -13,6 +13,7 @@ pub mod playlist;
 pub mod playlist_tracks;
 pub mod track;
 pub mod track_genres;
+pub mod endpoint;
 
 pub use album::Model as Album;
 pub use artist::Model as Artist;

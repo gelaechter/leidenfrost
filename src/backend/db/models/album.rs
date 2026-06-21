@@ -9,6 +9,9 @@ use crate::backend::db::models::OrmUrl;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: String,
+    pub endpoint_id: String,
+    #[sea_orm(belongs_to, from = "endpoint_id", to = "id")]
+    pub endpoint: HasOne<super::endpoint::Entity>,
     /// The artists who are credited as album artists
     /// This is not necessarily every artist that has
     /// worked on the album (i.e. collaborators / guests)

@@ -19,6 +19,8 @@ use iced::{
     },
 };
 
+use crate::ui::{ICMsg, ToCmdMsg, ToOutMsg};
+
 /// A table component
 pub struct Table<T, M> {
     /// The table rows
@@ -101,7 +103,7 @@ pub struct Row<T> {
     /// Is the row currently selected?
     selected: bool,
     /// Tracking when a row was last clicked to register double clicks
-    /// 
+    ///
     /// TODO: Consider stealing™ the decorator/double_click widget from halloy:
     /// <https://github.com/squidowl/halloy/blob/c3f2e4a30a1ac787342495640eb5de671de6d695/src/widget/double_click.rs>
     clicked_at: Option<Instant>,
@@ -118,9 +120,14 @@ impl<T> Row<T> {
     }
 }
 
+/// A function that produces the header of a column
+/// while this header can produce an arbitrary Message `M`, it will not be
+/// driven or reacted to.
 type ColumnHeader<M> = Box<dyn for<'a> Fn() -> Element<'static, M> + 'static>;
+
 /// A function that presents the row state in a column
 type ColumnView<T, M> = Box<dyn for<'a> Fn(&'a T) -> Element<'a, M> + 'static>;
+
 /// A function allowing us to update the row state in reaction to a column
 /// view emitted message
 type ColumnUpdate<T, M> = Box<dyn Fn(&mut T, M) -> Task<M> + 'static>;
@@ -208,7 +215,7 @@ impl<T, M> Column<T, M> {
 }
 
 #[derive(Debug, Clone)]
-pub enum Message<M: Clone> {
+pub enum Cmd<M: Clone> {
     /// Row visibility
     RowShown(usize),
     RowHidden(usize),
@@ -228,8 +235,14 @@ pub enum Message<M: Clone> {
     RowClicked(usize),
 }
 
+#[derive(Debug, Clone)]
+pub enum Out<T: Clone> {
+    /// A row has been double clicked
+    DoubleClicked(T),
+}
+
 /// The height one row of the track table has
-/// 
+///
 /// This has to be consistent because of virtualization of the rows
 const ROW_HEIGHT: u32 = 64 + 8;
 /// How many items should be anticipated by the sensor
@@ -237,12 +250,17 @@ const ANTICIPATED_ROWS: u32 = 2;
 /// The amount of rows per chunk
 const CHUNK_SIZE: usize = 100;
 
+/// A table message containing of 
+/// - T: The table type
+/// - M: The cell message
+pub type TableMsg<T, M> = ICMsg<Cmd<M>, Out<T>>;
+
 impl<T, M> Table<T, M>
 where
-    T: std::fmt::Debug + Clone + 'static,
+    T: std::fmt::Debug + Clone + MaybeSend + 'static,
     M: std::fmt::Debug + Clone + MaybeSend + 'static,
 {
-    pub fn view(&self) -> Element<'_, Message<M>> {
+    pub fn view(&self) -> Element<'_, TableMsg<T, M>> {
         let content = widget::column![
             widget::rule::horizontal(1),
             self.table_header(),
@@ -251,10 +269,10 @@ where
         ];
 
         let mouse_area = widget::mouse_area(content)
-            .on_move(Message::MouseMoved)
-            .on_press(Message::MousePressed)
-            .on_release(Message::MouseReleased)
-            .on_exit(Message::MouseReleased);
+            .on_move(Cmd::MouseMoved)
+            .on_press(Cmd::MousePressed)
+            .on_release(Cmd::MouseReleased)
+            .on_exit(Cmd::MouseReleased);
 
         let mouse_area = if self.columns.iter().any(|c| c.on_grab_area) {
             mouse_area.interaction(Interaction::ResizingHorizontally)
@@ -262,36 +280,37 @@ where
             mouse_area
         };
 
-        mouse_area.into()
+        let el: Element<'_, Cmd<M>> = mouse_area.into();
+        el.map(ToCmdMsg::cmd_msg)
     }
 
-    pub fn update(&mut self, message: Message<M>) -> Task<Message<M>> {
-        match message {
-            Message::RowShown(row_idx) => {
+    pub fn update(&mut self, message: impl Into<TableMsg<T, M>>) -> Task<TableMsg<T, M>> {
+        message.into().cmd(|c| match c {
+            Cmd::RowShown(row_idx) => {
                 self.rows[row_idx].visible = true;
                 Task::none()
             }
-            Message::RowHidden(row_idx) => {
+            Cmd::RowHidden(row_idx) => {
                 self.rows[row_idx].visible = false;
                 Task::none()
             }
-            Message::ChunkShown(chunk_idx) => {
+            Cmd::ChunkShown(chunk_idx) => {
                 self.visible_chunks.insert(chunk_idx);
                 Task::none()
             }
-            Message::ChunkHidden(chunk_idx) => {
+            Cmd::ChunkHidden(chunk_idx) => {
                 self.visible_chunks.remove(&chunk_idx);
                 Task::none()
             }
-            Message::ColumnDriver(row_idx, col_id, message) => {
+            Cmd::ColumnDriver(row_idx, col_id, message) => {
                 let row = &mut self.rows[row_idx];
                 let col = &self.columns[col_id];
 
                 (col.update)(&mut row.item, message)
-                    .map(move |m| Message::ColumnDriver(row_idx, col_id, m))
+                    .map(move |m| Cmd::ColumnDriver(row_idx, col_id, m).cmd_msg())
             }
-            Message::None => Task::none(),
-            Message::MouseMoved(position) => {
+            Cmd::None => Task::none(),
+            Cmd::MouseMoved(position) => {
                 self.mouse_position = position;
 
                 // Check if the mouse is on any resize points
@@ -314,7 +333,7 @@ where
 
                 Task::none()
             }
-            Message::MousePressed => {
+            Cmd::MousePressed => {
                 // Check if the cursor is on a resizer
                 let Some(resizing_col) = self.columns.iter().position(|c| c.on_grab_area) else {
                     return Task::none();
@@ -343,7 +362,7 @@ where
                 }
                 Task::none()
             }
-            Message::MouseReleased => {
+            Cmd::MouseReleased => {
                 self.resize_info = None;
 
                 // Return relative columns to a portioned layout
@@ -357,7 +376,7 @@ where
 
                 Task::none()
             }
-            Message::MeasureColumn(idx, Size { width, .. }) => {
+            Cmd::MeasureColumn(idx, Size { width, .. }) => {
                 let column = &mut self.columns[idx];
 
                 if width >= column.min_width {
@@ -367,28 +386,29 @@ where
                     // Abort resizing if any column goes below the minimum
                     // TODO: This fully disengages the resizing process; If possible this should
                     // instead disallow any further shrinking but allow growth
-                    Task::done(Message::MouseReleased)
+                    Task::done(Cmd::MouseReleased.cmd_msg())
                 }
             }
-            Message::RowClicked(idx) => {
+            Cmd::RowClicked(idx) => {
                 let row = &mut self.rows[idx];
                 row.selected = true;
-                // There already exists
+
+                // Check if the row was clicked less than 200ms ago
                 if let Some(instant) = row.clicked_at
                     && Instant::now().duration_since(instant) <= Duration::from_millis(200)
                 {
-                    /// TODO: return an out message
-                    return Task::none();
+                    return Task::done(Out::DoubleClicked(row.item.clone()).out_msg());
                 }
                 row.clicked_at = Some(Instant::now());
 
+                // Deselect all other rows
                 for (index, row) in self.rows.iter_mut().enumerate() {
                     row.selected = index == idx;
                 }
 
                 Task::none()
             }
-        }
+        })
     }
 
     /// Calculates the x positions of the end of the columns
@@ -402,11 +422,11 @@ where
             .collect()
     }
 
-    pub fn table_header(&self) -> Element<'_, Message<M>> {
+    pub fn table_header(&self) -> Element<'_, Cmd<M>> {
         let last = self.columns.len() - 1;
         let headers = self.columns.iter().enumerate().map(|(idx, col)| {
             // The header
-            let header = widget::container((col.header)().map(|_m| Message::None))
+            let header = widget::container((col.header)().map(|_m| Cmd::None))
                 .padding(Padding::ZERO.horizontal(8))
                 .height(Fill)
                 .width(Fill)
@@ -414,7 +434,7 @@ where
                 .align_y(Vertical::Center);
 
             // All the headers except the last get a grab button
-            let content: Element<'_, Message<M>> = if idx < last {
+            let content: Element<'_, Cmd<M>> = if idx < last {
                 // Grab button for resizing
                 let button = Self::grab_button(col);
                 row![header, button].width(Fill).into()
@@ -425,8 +445,8 @@ where
 
             // Measure the header width
             widget::sensor(widget::container(content).width(col.width))
-                .on_show(move |s| Message::MeasureColumn(idx, s))
-                .on_resize(move |s| Message::MeasureColumn(idx, s))
+                .on_show(move |s| Cmd::MeasureColumn(idx, s))
+                .on_resize(move |s| Cmd::MeasureColumn(idx, s))
                 .into()
         });
 
@@ -437,7 +457,7 @@ where
     }
 
     /// The button at the right end of a column that allows resizing it
-    pub fn grab_button(column: &Column<T, M>) -> widget::Container<'_, Message<M>> {
+    pub fn grab_button(column: &Column<T, M>) -> widget::Container<'_, Cmd<M>> {
         widget::container(
             widget::button(widget::space())
                 .style(|theme: &Theme, _status| Style {
@@ -466,7 +486,7 @@ where
     /// (I tested this with up to `800_000` rows)
     ///
     /// TODO: refactor this (it reads like shit)
-    pub fn sliding_window(&self) -> Element<'_, Message<M>> {
+    pub fn sliding_window(&self) -> Element<'_, Cmd<M>> {
         // Split the rows into chunks of size CHUNK_ROWS
         let rows = self
             .rows
@@ -474,7 +494,7 @@ where
             .enumerate()
             .map(|(chunk_idx, chunk)| {
                 // Check if the chunk is visible
-                let chunk: Element<'_, Message<M>> = if self.visible_chunks.contains(&chunk_idx) {
+                let chunk: Element<'_, Cmd<M>> = if self.visible_chunks.contains(&chunk_idx) {
                     widget::column(chunk.iter().enumerate().map(|(row_idx, row)| {
                         // Calculate proper row index with
                         let row_idx = row_idx + chunk_idx * CHUNK_SIZE;
@@ -489,8 +509,8 @@ where
                         // Wrap the row with a sensor to watch if it's visible
                         widget::sensor(row)
                             .anticipate(ANTICIPATED_ROWS * ROW_HEIGHT)
-                            .on_show(move |_| Message::RowShown(row_idx))
-                            .on_hide(Message::RowHidden(row_idx))
+                            .on_show(move |_| Cmd::RowShown(row_idx))
+                            .on_hide(Cmd::RowHidden(row_idx))
                             .into()
                     }))
                     .into()
@@ -504,8 +524,8 @@ where
                 // Wrap the chunk with a sensor to watch if it's visible
                 widget::sensor(chunk)
                     .anticipate(ANTICIPATED_ROWS * ROW_HEIGHT)
-                    .on_show(move |_| Message::ChunkShown(chunk_idx))
-                    .on_hide(Message::ChunkHidden(chunk_idx))
+                    .on_show(move |_| Cmd::ChunkShown(chunk_idx))
+                    .on_hide(Cmd::ChunkHidden(chunk_idx))
                     .into()
             });
 
@@ -516,11 +536,11 @@ where
     }
 
     /// A row showing all the columns for an item T
-    pub fn item_row<'a>(&self, row_idx: usize, row: &'a Row<T>) -> Element<'a, Message<M>> {
+    pub fn item_row<'a>(&self, row_idx: usize, row: &'a Row<T>) -> Element<'a, Cmd<M>> {
         // The columns
         let columns = self.columns.iter().enumerate().map(|(col_idx, col)| {
             widget::container(
-                (col.view)(&row.item).map(move |m| Message::ColumnDriver(row_idx, col_idx, m)),
+                (col.view)(&row.item).map(move |m| Cmd::ColumnDriver(row_idx, col_idx, m)),
             )
             .width(col.measured_width - 2.0)
             .height(ROW_HEIGHT)
@@ -550,7 +570,7 @@ where
             })
             .height(ROW_HEIGHT)
             .padding(Padding::new(0.0))
-            .on_press(Message::RowClicked(row_idx))
+            .on_press(Cmd::RowClicked(row_idx))
             .width(Fill)
             .into()
     }

@@ -6,87 +6,121 @@ pub mod playerbar;
 pub mod queue;
 pub mod router;
 pub mod sidebar;
-pub mod settings;
 
 use std::{
     clone::Clone,
+    convert::Infallible,
     fmt::{self, Debug},
 };
 
-use iced::Task;
+use iced::{Task, message::MaybeDebug};
 
 // TODO: Do some thinking if this is not completely over-engineered
 /// This is an inter-component-message consisting of two variants:
 /// - **Command** messages that tell the component what to do
 /// - **Out** messages that are meant for an upper component
 #[derive(Clone, Debug)]
-pub enum ICMsg<Cmd, Out>
+pub enum ICMsg<Cmd, Out, Err = Infallible>
 where
     Cmd: Clone + fmt::Debug,
     Out: Clone + fmt::Debug,
+    Err: std::error::Error,
 {
     Cmd(Cmd),
     Out(Out),
+    Err(Err),
 }
 
-impl<Cmd, Out> From<Cmd> for ICMsg<Cmd, Out>
+impl<Cmd, Out, Err> From<Cmd> for ICMsg<Cmd, Out, Err>
 where
     Cmd: Clone + Debug,
     Out: Clone + Debug,
+    Err: std::error::Error,
 {
-    /// Since [`Message::Cmd`] is the default variant, this method provides
-    /// coercion from any type into that.
+    /// [`ICMsg::Cmd`] is the default variant because our components always
+    /// expect to receive their instructions via Cmd. Out/Error variants are
+    /// meant for consumption by another component meaning they will be at some
+    /// point converted to a Cmd as well.
     ///
-    /// [`Message::Out`] variants need to be created manually \
-    /// See [`ToOutMsg::out`]
+    /// This method provides coercion from any type into that.
+    ///
+    /// The [`ICMsg::Cmd`] and [`ICMsg::Err`] variants need to be created
+    /// manually \ See [`ToOutMsg::out_msg`] and [`ToErrMsg::err_msg`]
     fn from(value: Cmd) -> Self {
         ICMsg::Cmd(value)
     }
 }
 
-trait ToOutMsg<Cmd, Out>
+trait ToOutMsg<Cmd, Out, Err>
 where
     Cmd: Clone + Debug,
     Out: Clone + Debug,
+    Err: std::error::Error,
 {
-    fn out_msg(self) -> ICMsg<Cmd, Out>;
+    fn out_msg(self) -> ICMsg<Cmd, Out, Err>;
 }
 
-impl<Cmd, Out> ToOutMsg<Cmd, Out> for Out
+impl<Cmd, Out, Err> ToOutMsg<Cmd, Out, Err> for Out
 where
     Cmd: Clone + Debug,
     Out: Clone + Debug,
+    Err: std::error::Error,
 {
-    fn out_msg(self) -> ICMsg<Cmd, Out> {
+    fn out_msg(self) -> ICMsg<Cmd, Out, Err> {
         ICMsg::Out(self)
     }
 }
 
-trait ToCmdMsg<Cmd, Out>
+trait ToCmdMsg<Cmd, Out, Err>
 where
     Cmd: Clone + Debug,
     Out: Clone + Debug,
+    Err: std::error::Error,
 {
-    fn cmd_msg(self) -> ICMsg<Cmd, Out>;
+    fn cmd_msg(self) -> ICMsg<Cmd, Out, Err>;
 }
 
-impl<Cmd, Out> ToCmdMsg<Cmd, Out> for Cmd
+impl<Cmd, Out, Err> ToCmdMsg<Cmd, Out, Err> for Cmd
 where
     Cmd: Clone + Debug,
     Out: Clone + Debug,
+    Err: std::error::Error,
 {
-    fn cmd_msg(self) -> ICMsg<Cmd, Out> {
+    fn cmd_msg(self) -> ICMsg<Cmd, Out, Err> {
         ICMsg::Cmd(self)
     }
 }
 
-impl<Cmd, Out> ICMsg<Cmd, Out>
+/// Helper trait which allows wrapping arbitrary values in [`ICMsg::Err`]
+trait ToErrMsg<Cmd, Out, Err>
 where
     Cmd: Clone + Debug,
     Out: Clone + Debug,
+    Err: std::error::Error,
 {
-    /// Processes only [`Message::Cmd`] variants
-    /// [`Message::Out`]s produce a Task::none()
+    fn err_msg(self) -> ICMsg<Cmd, Out, Err>;
+}
+
+impl<Cmd, Out, Err> ToErrMsg<Cmd, Out, Err> for Err
+where
+    Cmd: Clone + Debug,
+    Out: Clone + Debug,
+    Err: std::error::Error,
+{
+    /// Helper function which wraps arbitrary values in [`ICMsg::Err`]
+    fn err_msg(self) -> ICMsg<Cmd, Out, Err> {
+        ICMsg::Err(self)
+    }
+}
+
+impl<Cmd, Out, Err> ICMsg<Cmd, Out, Err>
+where
+    Cmd: Clone + Debug,
+    Out: Clone + Debug,
+    Err: std::error::Error,
+{
+    /// Processes only [`ICMsg::Cmd`] variants
+    /// Everything else (Out/Err) results in [`Task::none`]
     pub fn cmd<T, F>(self, f: F) -> Task<Self>
     where
         T: Into<Task<Self>>,
@@ -94,70 +128,7 @@ where
     {
         match self {
             ICMsg::Cmd(cmd) => f(cmd).into(),
-            ICMsg::Out(_) => Task::none(),
-        }
-    }
-
-    /// Processes only [`Message::Cmd`] variants
-    /// [`Message::Out`]s produce  the default
-    pub fn cmd_or<F, U>(self, default: U, f: F) -> U
-    where
-        F: FnOnce(Cmd) -> U,
-    {
-        match self {
-            ICMsg::Cmd(cmd) => f(cmd),
-            ICMsg::Out(_) => default,
-        }
-    }
-
-    /// Processes only [`Message::Cmd`] variants
-    /// [`Message::Out`]s compute the default function
-    pub fn cmd_or_else<U, D, F>(self, default: D, f: F) -> U
-    where
-        D: FnOnce(Out) -> U,
-        F: FnOnce(Cmd) -> U,
-    {
-        match self {
-            ICMsg::Cmd(cmd) => f(cmd),
-            ICMsg::Out(out) => default(out),
-        }
-    }
-
-    /// Processes only [`Message::Out`] variants
-    /// [`Message::Cmd`]s produce a Task::none()
-    pub fn out<T, F>(self, f: F) -> Task<Self>
-    where
-        T: Into<Task<Self>>,
-        F: FnOnce(Out) -> T,
-    {
-        match self {
-            ICMsg::Cmd(_) => Task::none(),
-            ICMsg::Out(out) => f(out).into(),
-        }
-    }
-
-    /// Processes only [`Message::Out`] variants
-    /// [`Message::Out`]s produce the default
-    pub fn out_or<U, F>(self, default: U, f: F) -> U
-    where
-        F: FnOnce(Out) -> U,
-    {
-        match self {
-            ICMsg::Cmd(_) => default,
-            ICMsg::Out(out) => f(out),
-        }
-    }
-
-    /// Processes only [`Message::Out`] variants
-    /// [`Message::Cmd`]s compute the default function
-    pub fn out_or_else<U, D, F>(self, default: D, f: F) -> U
-    where
-        D: FnOnce(Cmd) -> U,
-        F: FnOnce(Out) -> U,
-    {
-        match self {
-            ICMsg::Cmd(cmd) => default(cmd),
-            ICMsg::Out(out) => f(out),
+            _ => Task::none(),
         }
     }
 }

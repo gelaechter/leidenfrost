@@ -9,18 +9,21 @@ use iced::{Subscription, Task};
 use libmpv2::{Format, Mpv};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
-use url::Url;
 
 use crate::{
-    backend::mpv_data::{MpvEvent, MpvValue},
+    backend::{
+        data_view::TrackView,
+        db::models::OrmUrl,
+        mpv_data::{MpvEvent, MpvValue},
+    },
     ui::{
-        ICMsg, ToOutMsg,
-        player::{
+        ICMsg, ToErrMsg, ToOutMsg, player::{
             command::{
-                LOADFILE, PLAYLIST_MOVE, PLAYLIST_NEXT, PLAYLIST_PREV, PLAYLIST_REMOVE, SEEK, STOP,
+                LOADFILE, PLAYLIST_MOVE, PLAYLIST_NEXT, PLAYLIST_PLAY_INDEX, PLAYLIST_PREV,
+                PLAYLIST_REMOVE, SEEK, STOP,
             },
             property::{DURATION, LOOP_FILE, LOOP_PLAYLIST, PAUSE, SHUFFLE, TIME_POS, VOLUME},
-        },
+        }
     },
 };
 
@@ -43,7 +46,7 @@ pub enum PlayerState {
     Paused,
 }
 
-pub struct Player {
+pub struct MpvPlayer {
     /// the Mpv instance
     mpv: Mpv,
     /// For some god-forsaken reason mpv stores the
@@ -52,7 +55,7 @@ pub struct Player {
     loop_playlist: String,
 }
 
-impl Default for Player {
+impl Default for MpvPlayer {
     fn default() -> Self {
         Self {
             mpv: initialize_mpv(),
@@ -143,38 +146,161 @@ fn initialize_mpv() -> Mpv {
     mpv
 }
 
-#[derive(Clone, Debug)]
-pub enum Cmd {
+pub trait Player {
     /// (Un)pauses the player
-    Pause(bool),
+    fn pause(&self, paused: bool) -> Task<PlayerMsg>;
     /// Seek to a specific time in seconds
-    Seek(f64),
+    fn seek(&self, position: f64) -> Task<PlayerMsg>;
     /// Stop playback and clear playlist.
-    Stop,
-    /// Clears the queue and plays just that track
-    Play(Url),
-    PlayAll(Vec<Url>),
-    /// Adds some tracks to the queue
-    Append(Url),
-    AppendAll(Vec<Url>),
+    fn stop(&self) -> Task<PlayerMsg>;
+    /// Plays a track, should return an `Out::Queue` task
+    fn play(&self, track: TrackView) -> Task<PlayerMsg>;
+    /// Adds multiple tracks and plays the first
+    fn play_all(&self, tracks: Vec<TrackView>) -> Task<PlayerMsg>;
+    /// Plays a certain index in the queue
+    fn play_index(&self, index: usize) -> Task<PlayerMsg>;
+    fn append(&self, track: TrackView) -> Task<PlayerMsg>;
+    fn append_all(&self, tracks: Vec<TrackView>) -> Task<PlayerMsg>;
     /// Remove a track from the queue
-    QueueRemove(usize),
+    fn queue_remove(&self, index: usize) -> Task<PlayerMsg>;
     /// Move a track in the queue
     ///
     /// Moves a target track in the queue before the position of another one
-    QueueMove {
-        target: usize,
-        position: usize,
-    },
-    Shuffle(bool),
+    fn queue_move(&self, target: usize, position: usize) -> Task<PlayerMsg>;
+    fn set_shuffle(&self, shuffle: bool) -> Task<PlayerMsg>;
     /// Changes the repeat mode of the player
-    ChangeRepeatMode(RepeatMode),
+    fn change_repeat_mode(&self, mode: RepeatMode) -> Task<PlayerMsg>;
     /// Plays the next song
-    Next,
+    fn next(&self) -> Task<PlayerMsg>;
     /// Plays the previous song
-    Previous,
+    fn previous(&self) -> Task<PlayerMsg>;
     /// Sets the volume (0-100)
-    Volume(u32),
+    fn volume(&self, percentage: u32) -> Task<PlayerMsg>;
+}
+
+impl Player for MpvPlayer {
+    fn pause(&self, paused: bool) -> Task<PlayerMsg> {
+        self.mpv
+            .set_property(PAUSE, paused)
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn seek(&self, pos_in_secs: f64) -> Task<PlayerMsg> {
+        self.mpv
+            .command(SEEK, &[&pos_in_secs.to_string(), "absolute"])
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn stop(&self) -> Task<PlayerMsg> {
+        self.mpv
+            .command(STOP, &[])
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn play(&self, view: TrackView) -> Task<PlayerMsg> {
+        let url = match track_url(view) {
+            Ok(url) => url,
+            Err(e) => return task_from_error(e),
+        };
+
+        self.mpv
+            .command(LOADFILE, &[url.as_str()])
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn play_all(&self, views: Vec<TrackView>) -> Task<PlayerMsg> {
+        // Try to play all and return errors for all the unsuccessful queue adds
+        // TODO: This iterative approach might get real slow if we have HUGE queues
+        let tasks = views.into_iter().enumerate().map(|(idx, view)| {
+            // Play the first append the others
+            if idx == 0 {
+                self.play(view)
+            } else {
+                self.append(view)
+            }
+        });
+
+        Task::batch(tasks)
+    }
+
+    fn play_index(&self, index: usize) -> Task<PlayerMsg> {
+        self.mpv
+            .command(PLAYLIST_PLAY_INDEX, &[&index.to_string()])
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn append(&self, view: TrackView) -> Task<PlayerMsg> {
+        let url = match track_url(view) {
+            Ok(url) => url,
+            Err(e) => return task_from_error(e),
+        };
+
+        self.mpv
+            .command(LOADFILE, &["append", url.as_str()])
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn append_all(&self, tracks: Vec<TrackView>) -> Task<PlayerMsg> {
+        let tasks = tracks.into_iter().map(|view| self.append(view));
+
+        Task::batch(tasks)
+    }
+
+    fn queue_remove(&self, index: usize) -> Task<PlayerMsg> {
+        self.mpv
+            .command(PLAYLIST_REMOVE, &[&index.to_string()])
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn queue_move(&self, target: usize, position: usize) -> Task<PlayerMsg> {
+        self.mpv
+            .command(PLAYLIST_MOVE, &[&target.to_string(), &position.to_string()])
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn set_shuffle(&self, shuffle: bool) -> Task<PlayerMsg> {
+        self.mpv
+            .set_property(SHUFFLE, shuffle)
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn change_repeat_mode(&self, mode: RepeatMode) -> Task<PlayerMsg> {
+        let (loop_file, loop_playlist) = match mode {
+            RepeatMode::None => ("no", "no"),
+            RepeatMode::Song => ("inf", "no"),
+            RepeatMode::Queue => ("no", "inf"),
+        };
+
+        let file_res = self.mpv.set_property(LOOP_FILE, loop_file);
+        let playlist_res = self.mpv.set_property(LOOP_PLAYLIST, loop_playlist);
+
+        Task::batch([
+            file_res.map_or_else(task_from_error, |_| Task::none()),
+            playlist_res.map_or_else(task_from_error, |_| Task::none()),
+        ])
+    }
+
+    fn next(&self) -> Task<PlayerMsg> {
+        self.mpv
+            .command(PLAYLIST_NEXT, &[])
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn previous(&self) -> Task<PlayerMsg> {
+        self.mpv
+            .command(PLAYLIST_PREV, &[])
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+
+    fn volume(&self, percentage: u32) -> Task<PlayerMsg> {
+        self.mpv
+            .set_property(VOLUME, i64::from(percentage))
+            .map_or_else(task_from_error, |_| Task::none())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum Cmd {
     /// An Event received from the MPV player
     /// this needs to be converted to an [`Out`] for public consumption
     Event(MpvEvent),
@@ -183,10 +309,10 @@ pub enum Cmd {
 #[derive(Clone, Debug)]
 pub enum Out {
     Event(PlayerEvent),
-    /// An error occured
-    Error(PlayerError),
+    Queue(Box<QueueEvent>),
 }
 
+/// TODO: Consider extracing these directly into Out
 #[derive(Clone, Debug)]
 pub enum PlayerEvent {
     /// Shuffle has been (de)actived
@@ -200,12 +326,19 @@ pub enum PlayerEvent {
     /// The playing items duration has changed
     ///
     /// This might seem obsolete since the application should know the duration
-    /// through the queue and the currently playing
-    /// [`crate::backend::data_view::TrackView`], but we treat the player as
-    /// our source of truth, in case the Metadata and actual file don't match.
+    /// through the queue and the currently playing [`TrackView`], but we treat
+    /// the player as our source of truth, in case the Metadata and actual file
+    /// don't match.
     Duration(f64),
     /// The volume (0 to 100) has changed
     Volume(u32),
+}
+
+/// TODO: Consider extracing these directly into Out
+#[derive(Clone, Debug)]
+pub enum QueueEvent {
+    /// A track has been appended
+    Append(TrackView),
 }
 
 pub mod command {
@@ -223,14 +356,16 @@ pub mod command {
     pub const PLAYLIST_PREV: &str = "playlist-prev";
     /// <https://mpv.io/manual/master/#command-interface-playlist-move>
     pub const PLAYLIST_MOVE: &str = "playlist-move";
+    /// <https://mpv.io/manual/master/#command-interface-playlist-play-index[preserve-options]>
+    pub const PLAYLIST_PLAY_INDEX: &str = "playlist-play-index";
 }
 
-pub type PlayerMsg = ICMsg<Cmd, Out>;
+pub type PlayerMsg = ICMsg<Cmd, Out, PlayerError>;
 
 // TODO: Since player doesn't implement view we technically don't need to use
 // ELM We could instead just have a function for each message which might
 // declutter things.
-impl Player {
+impl MpvPlayer {
     pub fn update(&mut self, message: impl Into<PlayerMsg>) -> Task<PlayerMsg> {
         // Only commands need to be handled
         let icmsg = message.into();
@@ -238,11 +373,6 @@ impl Player {
             match c {
                 // Handle the events emitted from [`Self::subscription`]
                 Cmd::Event(event) => self.handle_event(event),
-                // Handle everything else
-                _ => match self.update_cmd(c) {
-                    Ok(()) => Task::none(),
-                    Err(e) => Task::done(Out::Error(PlayerError::from(e)).out_msg()),
-                }
             }
         })
     }
@@ -254,7 +384,7 @@ impl Player {
             return Task::none();
         };
 
-        // Convert the mpv events to proper [`Out`] commands for easy consumption
+        // Convert the raw mpv events to proper [`Out`] commands for easy consumption
         let event = match (name.as_str(), value) {
             (SHUFFLE, MpvValue::Bool(s)) => PlayerEvent::Shuffle(s),
             (LOOP_FILE, MpvValue::String(val)) => {
@@ -273,61 +403,7 @@ impl Player {
         };
 
         // Dispatch task so this can be dealt with at some upper layer
-        Task::done(ICMsg::Out(Out::Event(event)))
-    }
-
-    fn update_cmd(&mut self, c: Cmd) -> Result<(), libmpv2::Error> {
-        match c {
-            Cmd::Pause(pause) => self.mpv.set_property(PAUSE, pause),
-            Cmd::Seek(seconds) => self.mpv.command(SEEK, &[&seconds.to_string(), "absolute"]),
-            Cmd::Play(url) => self.mpv.command(LOADFILE, &[url.as_str()]),
-            Cmd::PlayAll(urls) => {
-                // Play the first append the others
-                for (index, ele) in urls.into_iter().enumerate() {
-                    if index == 0 {
-                        self.update_cmd(Cmd::Play(ele))?;
-                    } else {
-                        self.update_cmd(Cmd::Append(ele))?;
-                    }
-                }
-                Ok(())
-            }
-            Cmd::Append(url) => self.mpv.command(LOADFILE, &["append", url.as_str()]),
-            Cmd::AppendAll(urls) => {
-                for url in urls {
-                    self.update_cmd(Cmd::Append(url))?;
-                }
-                Ok(())
-            }
-            Cmd::Stop => self.mpv.command(STOP, &[]),
-            Cmd::QueueRemove(usize) => self.mpv.command(PLAYLIST_REMOVE, &[&usize.to_string()]),
-            Cmd::Next => self.mpv.command(PLAYLIST_NEXT, &[]),
-            Cmd::Previous => self.mpv.command(PLAYLIST_PREV, &[]),
-            Cmd::QueueMove {
-                target: before,
-                position: after,
-            } => self
-                .mpv
-                .command(PLAYLIST_MOVE, &[&before.to_string(), &after.to_string()]),
-            Cmd::ChangeRepeatMode(mode) => match mode {
-                RepeatMode::None => {
-                    self.mpv.set_property(LOOP_FILE, "no")?;
-                    self.mpv.set_property(LOOP_PLAYLIST, "no")
-                }
-                RepeatMode::Song => {
-                    self.mpv.set_property(LOOP_FILE, "inf")?;
-                    self.mpv.set_property(LOOP_PLAYLIST, "no")
-                }
-                RepeatMode::Queue => {
-                    self.mpv.set_property(LOOP_FILE, "no")?;
-                    self.mpv.set_property(LOOP_PLAYLIST, "inf")
-                }
-            },
-            Cmd::Shuffle(shuffle) => self.mpv.set_property(SHUFFLE, shuffle),
-            Cmd::Volume(volume) => self.mpv.set_property(VOLUME, i64::from(volume)),
-            // The events are handled in
-            Cmd::Event(_) => Ok(()),
-        }
+        Task::done(Out::Event(event).out_msg())
     }
 
     /// MPV uses two variables and Strings to determine repeat mode
@@ -342,7 +418,7 @@ impl Player {
     }
 
     /// Subscribes to the Mpv threads
-    pub fn subscription() -> Subscription<ICMsg<Cmd, Out>> {
+    pub fn subscription() -> Subscription<ICMsg<Cmd, Out, PlayerError>> {
         fn subscribe_mpv_events() -> impl Stream<Item = MpvEvent> {
             use tokio_stream::StreamExt;
 
@@ -364,11 +440,27 @@ impl Player {
 pub enum PlayerError {
     #[error("unknown player error")]
     Unknown,
+    #[error("The TrackViews StreamURL was None: {0:?}")]
+    NoStream(TrackView),
 }
 
 impl From<libmpv2::Error> for PlayerError {
     fn from(value: libmpv2::Error) -> Self {
         // TODO: parse the actual mpv error
         Self::Unknown
+    }
+}
+
+pub fn task_from_error(err: impl Into<PlayerError>) -> Task<PlayerMsg> {
+    Task::done(err.into().err_msg())
+}
+
+/// Returns Ok(OrmUrl) if the TrackView has a StreamUrl,
+/// Err(PlayerError::NoStream(TrackView)) otherwise
+pub fn track_url(view: TrackView) -> Result<OrmUrl, PlayerError> {
+    if let Some(url) = view.track.stream_url {
+        Ok(url)
+    } else {
+        Err(PlayerError::NoStream(view))
     }
 }

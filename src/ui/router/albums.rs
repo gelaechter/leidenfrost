@@ -25,7 +25,11 @@ use crate::{
     },
     ui::{
         components::{
-            icons, image::{self, Image}, style::{column_header, default_header, muted_text}, table::{self, Column, Table}, utils::{IntoLinks, format_duration}
+            icons,
+            image::{self, Image},
+            style::{column_header, default_header, muted_text},
+            table::{Column, Table, TableMsg},
+            utils::{IntoLinks, format_duration},
         },
         router::Route,
     },
@@ -55,7 +59,7 @@ pub enum Message {
     /// The tracks have been fetched
     RowsCreated(Vec<AlbumRow>),
     /// A driver for the table
-    TableDriver(table::Message<AlbumCellMsg>),
+    TableDriver(TableMsg<AlbumRow, AlbumCellMsg>),
     /// The user requests to play all tracks
     PlayAllAlbums,
 }
@@ -87,7 +91,7 @@ impl Albums {
                         "***REMOVED***".to_string(),
                         "***REMOVED***".to_string(),
                     )
-                    .await;
+                    .await.unwrap();
 
                     jf.get_albums(GetAlbumsParams::default()).await.unwrap()
                 })

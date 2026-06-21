@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{collections::BTreeMap, sync::LazyLock};
 
 use crate::backend::{
     api::{
@@ -14,9 +14,10 @@ use crate::backend::{
         },
     },
     data_view::{AlbumView, ArtistView, DiscView, GenreView, PlaylistView, TrackView},
-    db::models::{Artist, Disc},
+    db::models::Disc,
 };
 
+use async_trait::async_trait;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
@@ -30,14 +31,20 @@ pub struct JellyfinApi {
     folder_id: Option<String>,
     #[serde(with = "http_serde::header_map")]
     headers: HeaderMap,
-    #[serde(skip)]
-    client: reqwest::Client,
 }
 
 pub type Result<T> = endpoint_api::Result<T>;
 
+static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+
 impl UserPasswordAuth for JellyfinApi {
-    async fn auth_user_password(url: Url, username: String, password: String) -> JellyfinApi {
+    async fn auth_user_password(
+        url: Url,
+        username: String,
+        password: String,
+    ) -> Result<JellyfinApi> {
+        log::debug!("JellyfinApi::auth_user_password: {url:?}, {username:?}, {password:?}");
+
         let client = reqwest::Client::new();
         let auth_header = r#"MediaBrowser Client="Randale",Device="Android",DeviceId="aaihsgdfoiuaghsdfuawbfayuzgbsdfufzg",Version="0.0.1""#;
 
@@ -54,32 +61,27 @@ impl UserPasswordAuth for JellyfinApi {
                 "Pw": &password,
             }))
             .send()
-            .await
-            .unwrap()
-            .error_for_status()
-            .unwrap()
+            .await?
+            .error_for_status()?
             .text()
-            .await
-            .unwrap();
+            .await?;
 
-        let response_json: Value = serde_json::from_str(&authentication_response)
-            .map_err(|e| {
-                RequestError::SerdeError(
-                    "Couldn't parse server response while authorizing".to_owned(),
-                    e.to_string(),
-                    authentication_response.clone(),
-                )
-            })
-            .unwrap();
-
-        let access_token = response_json["AccessToken"]
-            .as_str()
-            .ok_or(RequestError::SerdeError(
-                "The field AccessToken doesn't exist".to_owned(),
-                "Jellyfin authentication response didn't contain a token".to_owned(),
+        let response_json: Value = serde_json::from_str(&authentication_response).map_err(|e| {
+            RequestError::SerdeError(
+                "Couldn't parse server response while authorizing".to_owned(),
+                e.to_string(),
                 authentication_response.clone(),
-            ))
-            .unwrap();
+            )
+        })?;
+
+        let access_token =
+            response_json["AccessToken"]
+                .as_str()
+                .ok_or(RequestError::SerdeError(
+                    "The field AccessToken doesn't exist".to_owned(),
+                    "Jellyfin authentication response didn't contain a token".to_owned(),
+                    authentication_response.clone(),
+                ))?;
 
         let user_id = response_json["User"]["Id"]
             .as_str()
@@ -87,8 +89,7 @@ impl UserPasswordAuth for JellyfinApi {
                 "The path User.Id doesn't exist".to_owned(),
                 "Jellyfin authentication response didn't contain the user id".to_owned(),
                 authentication_response,
-            ))
-            .unwrap();
+            ))?;
 
         headers.insert(
             AUTHORIZATION,
@@ -97,13 +98,12 @@ impl UserPasswordAuth for JellyfinApi {
                 .unwrap(),
         );
 
-        JellyfinApi {
+        Ok(JellyfinApi {
             url,
             user_id: user_id.to_owned(),
             folder_id: None,
             headers,
-            client,
-        }
+        })
     }
 }
 
@@ -126,8 +126,9 @@ impl JellyfinApi {
         P: Serialize + ?Sized,
         Self: Normalize<BaseItemDto, T>,
     {
-        let request_builder = self
-            .client
+        dbg!(&self.headers);
+
+        let request_builder = CLIENT
             .get(self.url.join(relative_path)?)
             .headers(self.headers.clone());
 
@@ -166,12 +167,14 @@ impl JellyfinApi {
         additional_params: &P,
     ) -> Result<Vec<T>>
     where
+        // Query paramters
         P: Serialize + ?Sized,
         S: Into<ItemSortBy> + std::fmt::Debug + Clone + Default,
         Self: Normalize<BaseItemDto, T>,
     {
-        let mut request_builder = self
-            .client
+        dbg!(relative_path, &self.headers);
+
+        let mut request_builder = CLIENT
             .get(self.url.join(relative_path)?)
             .headers(self.headers.clone());
 
@@ -228,7 +231,12 @@ impl JellyfinApi {
     pub async fn index_data(&self, db: DatabaseConnection) {}
 }
 
+#[async_trait]
 impl MusicEndpoint for JellyfinApi {
+    fn get_id(&self) -> String {
+        format!("Jellyfin_{}_{}", self.url, self.user_id)
+    }
+
     async fn get_track(&self, track_id: String) -> Result<TrackView> {
         let user_id = &self.user_id;
 
@@ -237,6 +245,8 @@ impl MusicEndpoint for JellyfinApi {
     }
 
     async fn get_tracks(&self, params: GetTracksParams) -> Result<Vec<TrackView>> {
+        log::debug!("get_tracks: {params:?}");
+
         let user_id = &self.user_id;
         let GetTracksParams {
             pagination,
@@ -334,6 +344,8 @@ impl MusicEndpoint for JellyfinApi {
         artist_id: String,
         params: GetAlbumsParams,
     ) -> Result<ArtistAlbums> {
+        log::debug!("get_artist_albums: {artist_id:?} {params:?}");
+
         let user_id = &self.user_id;
         let GetAlbumsParams {
             pagination,
@@ -437,7 +449,7 @@ impl MusicEndpoint for JellyfinApi {
         .await
     }
 
-    fn capabilities() -> endpoint_api::Capabilities {
+    fn capabilities(&self) -> endpoint_api::Capabilities {
         todo!()
     }
 

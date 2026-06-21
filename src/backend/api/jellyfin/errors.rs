@@ -1,20 +1,25 @@
 use std::fmt::Debug;
-use std::fmt::Display;
 
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde::Serialize;
 use thiserror::Error;
+use tokio::task::JoinError;
 
 /// An enum representing the different types of [`ApiError::RequestError`] \
 /// Automatically coerces into an [`ApiError::RequestError`]
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum RequestError {
+    #[error("Unauthorized")]
     Unauthorized,
+    #[error("Forbidden")]
     Forbidden,
     /// Should contain the serde Error, a message and a Source
+    #[error("{0}: {1} in source:\n{2}")]
     SerdeError(String, String, String),
+    #[error("{0}")]
     MalformedUrl(String),
+    #[error("{0}")]
     Unknown(String),
 }
 
@@ -24,47 +29,37 @@ impl From<RequestError> for ApiError {
     }
 }
 
-impl Display for RequestError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RequestError::Unauthorized => f.write_str("Unauthorized"),
-            RequestError::Forbidden => f.write_str("Forbidden"),
-            RequestError::Unknown(s) => f.write_str(s),
-            RequestError::MalformedUrl(s) => f.write_str(s),
-            RequestError::SerdeError(error, message , source) => f.write_str(&format!("{error}: {message} in source:\n{source}")),
-        }
-    }
-}
-
 /// An Error representing different problems with Tauri's backend API \
 /// Should be used as Error type on all Tauri commands
-#[derive(Error, Debug, Serialize, Deserialize, Clone)]
+#[derive(Error, Debug, Clone)]
 pub enum ApiError {
     #[error("Request Unauthorized")]
-    ApiUnauthorized,
+    Unauthorized,
     #[error("Request to server failed: {0}")]
     RequestError(RequestError),
     #[error("Unsupported API call! {0} for Endpoint {1}")]
     Unsupported(String, String),
+    #[error("Async Error")]
+    JoinError,
 }
 
 impl From<reqwest::Error> for ApiError {
     fn from(value: reqwest::Error) -> Self {
-        let reason = match value.status() {
-            Some(status) => match status {
-                StatusCode::UNAUTHORIZED => RequestError::Unauthorized,
-                StatusCode::FORBIDDEN => RequestError::Forbidden,
-                _ => RequestError::Unknown(value.to_string()),
-            },
-            None => RequestError::Unknown(value.to_string()),
-        };
-
-        ApiError::RequestError(reason)
+        match value.status() {
+            Some(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => ApiError::Unauthorized,
+            _ => RequestError::Unknown(value.to_string()).into(),
+        }
     }
 }
 
 impl From<url::ParseError> for ApiError {
     fn from(value: url::ParseError) -> Self {
         ApiError::RequestError(RequestError::MalformedUrl(value.to_string()))
+    }
+}
+
+impl From<JoinError> for ApiError {
+    fn from(value: JoinError) -> Self {
+        ApiError::JoinError
     }
 }

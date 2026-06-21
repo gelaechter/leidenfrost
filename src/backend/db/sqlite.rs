@@ -4,9 +4,11 @@ type Result<T> = color_eyre::Result<T>;
 
 // TODO: Update path
 const DB_PATH: &str = "/home/***REMOVED***/Projects/randale_iced/test.sqlite";
+
 // Read/Write/Create
 const MODE: &str = "rwc";
 
+#[derive(Default)]
 pub struct DB;
 
 impl DB {

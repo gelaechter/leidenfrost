@@ -13,20 +13,19 @@ use iced::{
     Font, font,
     widget::{column, row, text},
 };
-use url::Url;
 
 use crate::{
     backend::{
-        api::{
-            endpoint_api::{GetPlaylistParams, MusicEndpoint, UserPasswordAuth},
-            jellyfin::api::JellyfinApi,
-        },
+        api::endpoint_api::{GetPlaylistParams, MusicEndpoint},
         data_view::PlaylistView,
     },
     ui::{
         ICMsg, ToCmdMsg, ToOutMsg,
-        components::{icons, image::{self, Image}},
-        router::Route,
+        components::{
+            icons,
+            image::{self, Image},
+        },
+        router::{Route, settings::ENDPOINTS},
     },
 };
 
@@ -42,6 +41,8 @@ pub enum Cmd {
     FetchPlaylists,
     PlaylistsFetched(Vec<PlaylistView>),
     ImageDriver(image::Message),
+    /// The route has changed
+    RouteChanged(Route),
 }
 
 #[derive(Clone, Debug)]
@@ -71,7 +72,11 @@ impl Sidebar {
                 self.tab_button(icons::music(), text("Tracks").font(bold), Route::Tracks),
                 self.tab_button(icons::user(), text("Artists").font(bold), Route::Artists),
                 self.tab_button(icons::tag(), text("Genres").font(bold), Route::Genres),
-                self.tab_button(icons::settings(), text("Settings").font(bold), Route::Settings),
+                self.tab_button(
+                    icons::settings(),
+                    text("Settings").font(bold),
+                    Route::Settings
+                ),
                 space().height(28),
                 text("Playlists").font(bold),
                 self.playlists()
@@ -94,14 +99,10 @@ impl Sidebar {
                     Task::perform(
                         async {
                             // TODO: Replace with global state
-                            let jf = JellyfinApi::auth_user_password(
-                                Url::parse("http://***REMOVED***").unwrap(),
-                                "***REMOVED***".to_string(),
-                                "***REMOVED***".to_string(),
-                            )
-                            .await;
+                            let endpoints = ENDPOINTS.read().await;
 
-                            jf.get_playlists(GetPlaylistParams::default())
+                            endpoints
+                                .get_playlists(GetPlaylistParams::default())
                                 .await
                                 .unwrap()
                         },
@@ -120,6 +121,10 @@ impl Sidebar {
                     Task::none()
                 }
                 Cmd::ImageDriver(m) => self.images.update(m).map(|m| Cmd::ImageDriver(m).cmd_msg()),
+                Cmd::RouteChanged(route) => {
+                    self.route = route;
+                    Task::none()
+                }
             };
             task
         })

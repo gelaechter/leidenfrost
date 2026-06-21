@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use crate::ui::components::{icons, utils::IntoLinks};
+use crate::ui::components::{icons, table::TableMsg, utils::IntoLinks};
 use crate::ui::components::{style::EM_DASH, utils::IntoLink};
 use crate::{backend::data_view::RelatedGenre, ui::components::utils::format_duration};
 use iced::{
@@ -33,6 +33,8 @@ use crate::{
 
 /// A table showing tracks
 pub type TrackTable = Table<TrackRow, TrackCellMsg>;
+/// The corresponding message
+pub type TrackTableMsg = TableMsg<TrackRow, TrackCellMsg>;
 
 /// The data that represents one row in the table
 #[derive(Debug, Clone)]

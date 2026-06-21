@@ -14,28 +14,38 @@ use iced::{
 use iced::widget::pane_grid;
 use url::Url;
 
-use crate::ui::{
-    ICMsg, player::{self, Player, PlayerMsg}, playerbar::{self, PlayerBar, PlayerBarMsg}, queue::{self, Queue}, router::{self, Router}, settings::Settings, sidebar::{self, Sidebar, SidebarMsg}
+use crate::{
+    backend::api::{endpoint_api::UserPasswordAuth, jellyfin::api::JellyfinApi},
+    ui::{
+        ICMsg,
+        player::{self, MpvPlayer, Player, PlayerMsg},
+        playerbar::{self, PlayerBar, PlayerBarMsg},
+        queue::{self, Queue},
+        router::{self, Router, RouterMsg, settings::ENDPOINTS},
+        sidebar::{self, Sidebar, SidebarMsg},
+    },
 };
 
 /// App is the top level model in this application
 pub struct App {
+    /// These panes are the main layout of the app. They show:
+    /// - the sidebar (containing navigation)
+    /// - the main window (containing the router/routes)
+    /// - the queue (containing the next queued items)
     panes: pane_grid::State<Pane>,
     sidebar: Sidebar,
-    settings: Settings,
     router: Router,
     queue: Queue,
-    player: Player,
+    player: MpvPlayer,
     player_bar: PlayerBar,
 }
 
-impl Default for App {
-    fn default() -> Self {
+impl App {
+    pub fn new() -> Self {
         let sidebar = Sidebar::default();
-        let settings = Settings::default();
         let router = Router::default();
         let queue = Queue::default();
-        let player = Player::default();
+        let player = MpvPlayer::default();
         let player_bar = PlayerBar::default();
 
         // Creates a new pane state and immediately splits it
@@ -58,7 +68,6 @@ impl Default for App {
             queue,
             player,
             player_bar,
-            settings,
         }
     }
 }
@@ -77,7 +86,7 @@ pub enum Message {
     PaneResized(pane_grid::ResizeEvent),
     Sidebar(SidebarMsg),
     Queue(Box<queue::Message>),
-    Router(router::Message),
+    Router(RouterMsg),
     PlayerBar(PlayerBarMsg),
     KeyboardEvent(keyboard::Event),
     Player(PlayerMsg),
@@ -89,11 +98,12 @@ impl App {
         // Enclosing container
         container(column![
             // Pane grid consisting of sidebar, main window (router) and queue
-            pane_grid(&self.panes, |pane, state, is_maximized| {
+            pane_grid(&self.panes, |_pane, state, _is_maximized| {
                 pane_grid::Content::new(match state {
                     Pane::Sidebar => self.sidebar.view().map(Message::Sidebar),
                     Pane::Queue => self.queue.view().map(|m| Message::Queue(Box::new(m))),
-                    Pane::Router => self.router.view(&self.settings).map(Message::Router),
+                    // The router view s
+                    Pane::Router => self.router.view().map(Message::Router),
                 })
             })
             .on_resize(10, Message::PaneResized),
@@ -117,10 +127,7 @@ impl App {
                     // Pass update router upwards
                     sidebar::Out::UpdateRoute(ref route) => Task::batch([self
                         .router
-                        .update(
-                            &mut self.settings,
-                            router::Message::ChangeRoute(route.clone()),
-                        )
+                        .update(router::Cmd::ChangeRoute(route.clone()))
                         .map(Message::Router)]),
                 },
             },
@@ -128,10 +135,34 @@ impl App {
                 .queue
                 .update(*queue_message)
                 .map(|m| Message::Queue(Box::new(m))),
-            Message::Router(router_message) => self
-                .router
-                .update(&mut self.settings, router_message)
-                .map(Message::Router),
+            Message::Router(message) => match message {
+                ICMsg::Cmd(cmd) => self.router.update(cmd).map(Message::Router),
+                ICMsg::Out(out) => match out {
+                    router::Out::ChangeRoute(route) => {
+                        // The sidebar needs to be notified so it can display the current route
+                        self.sidebar
+                            .update(sidebar::Cmd::RouteChanged(route))
+                            .map(Message::Sidebar)
+                    }
+                    router::Out::TracksMsg(out) => {
+                        // Tracks has emitted an out message
+                        match out {
+                            // It wants to play a track
+                            router::tracks::Out::PlayTrack { tracks, index } => {
+                                dbg!("Playtrack triggered");
+                                Task::batch([
+                                    self.player // Play all
+                                        .play_all(tracks)
+                                        .map(Message::Player),
+                                    self.player // Then set the index
+                                        .play_index(index)
+                                        .map(Message::Player),
+                                ])
+                            }
+                        }
+                    }
+                },
+            },
             // Player bar wiring
             Message::PlayerBar(message) => match message {
                 ICMsg::Cmd(cmd) => self.player_bar.update(cmd).map(Message::PlayerBar),
@@ -141,33 +172,19 @@ impl App {
 
                     match out {
                         // Forward messages for the player
-                        Bar::Pause(p) => self.player.update(Player::Pause(p)).map(Message::Player),
-                        Bar::Seek(d) => self.player.update(Player::Seek(d)).map(Message::Player),
-                        Bar::Next => self.player.update(Player::Next).map(Message::Player),
-                        Bar::Previous => self.player.update(Player::Previous).map(Message::Player),
-                        Bar::Stop => self.player.update(Player::Stop).map(Message::Player),
-                        Bar::Shuffle(s) => {
-                            self.player.update(Player::Shuffle(s)).map(Message::Player)
-                        }
-                        Bar::Repeat(r) => self
-                            .player
-                            .update(Player::ChangeRepeatMode(r))
-                            .map(Message::Player),
-                        Bar::PlayRandom => {
-                            // Currently used for testing
-                            let url = Url::parse(
-                                "file:///mnt/NAS/Samuel/Music/flac/Savant/Alchemist 2/07 - Hungry Eyes.flac",
-                            )
-                            .unwrap();
-                            self.player.update(Player::Play(url)).map(Message::Player)
-                        }
-                        Bar::Volume(v) => {
-                            self.player.update(Player::Volume(v)).map(Message::Player)
-                        }
+                        Bar::Pause(p) => self.player.pause(p).map(Message::Player),
+                        Bar::Seek(d) => self.player.seek(d).map(Message::Player),
+                        Bar::Next => self.player.next().map(Message::Player),
+                        Bar::Previous => self.player.previous().map(Message::Player),
+                        Bar::Stop => self.player.stop().map(Message::Player),
+                        Bar::Shuffle(s) => self.player.set_shuffle(s).map(Message::Player),
+                        Bar::Repeat(r) => self.player.change_repeat_mode(r).map(Message::Player),
+                        Bar::PlayRandom => Task::done(todo!("TODO:")),
+                        Bar::Volume(v) => self.player.volume(v).map(Message::Player),
                         // Forward change route (from clicking links)
                         Bar::ChangeRoute(route) => self
                             .router
-                            .update(&mut self.settings, router::Message::ChangeRoute(route))
+                            .update(router::Cmd::ChangeRoute(route))
                             .map(Message::Router),
                     }
                 }
@@ -182,16 +199,21 @@ impl App {
             Message::Player(message) => {
                 match message {
                     ICMsg::Cmd(cmd) => self.player.update(cmd).map(Message::Player),
-                    ICMsg::Out(out) => {
-                        match out {
-                            player::Out::Event(player_event) => self
-                                .player_bar
-                                .update(playerbar::Cmd::Event(player_event))
-                                .map(Message::PlayerBar),
-                            // TODO: actually handle errors
-                            player::Out::Error(player_error) => Task::none(),
-                        }
-                    }
+                    ICMsg::Out(out) => match out {
+                        player::Out::Event(player_event) => self
+                            .player_bar
+                            .update(playerbar::Cmd::Event(player_event))
+                            .map(Message::PlayerBar),
+                        // Handle queue updates that should reflect the actual player queue
+                        player::Out::Queue(queue_event) => match *queue_event {
+                            player::QueueEvent::Append(track_view) => self
+                                .queue
+                                .update(queue::Message::Append(track_view))
+                                .map(|m| Message::Queue(Box::new(m))),
+                        },
+                    },
+                    // TODO: actually handle errors
+                    ICMsg::Err(e) => todo!(),
                 }
             }
         }
@@ -200,11 +222,11 @@ impl App {
     pub fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             keyboard::listen().map(Message::KeyboardEvent),
-            Player::subscription().map(Message::Player),
+            MpvPlayer::subscription().map(Message::Player),
         ])
     }
 
     pub fn theme(&self) -> Option<Theme> {
-        self.settings.theme.clone()
+        self.router.settings.theme.clone()
     }
 }

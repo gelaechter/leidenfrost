@@ -45,7 +45,7 @@ fn main() {
     Font,
     advanced::text,
     widget::{self, Text, text::Catalog},
-};\n",
+};\n\n",
     );
 
     for glyph in icomoon.glyphs {

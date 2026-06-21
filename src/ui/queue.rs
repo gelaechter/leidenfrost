@@ -2,15 +2,15 @@ use iced::{Element, Task};
 
 use crate::{
     backend::data_view::TrackView,
-    ui::components::{
-        table,
+    ui::components::
         track_table::{
-            TrackCellMsg, TrackTable, combined_title_column, duration_column, index_column,
-        },
-    },
+            TrackTable, TrackTableMsg, combined_title_column, duration_column, index_column
+        }
+    ,
 };
 
 pub struct Queue {
+    /// The table displaying the current queue
     table: TrackTable,
 }
 
@@ -30,10 +30,12 @@ pub enum Message {
     /// Clears the queue and plays just that track
     Play(TrackView),
     PlayAll(Vec<TrackView>),
+    /// Changes playback to a certain index in the queue
+    PlayIndex(usize),
     /// Adds some tracks to the queue
     Append(TrackView),
     AppendAll(Vec<TrackView>),
-    /// Remove a track from the queue
+    /// Remove a track from the queue (zero indexed)
     QueueRemove(usize),
     /// Move a track in the queue
     ///
@@ -42,7 +44,8 @@ pub enum Message {
         target: usize,
         position: usize,
     },
-    TableDriver(table::Message<TrackCellMsg>),
+    /// Drives the used track Table
+    TableDriver(TrackTableMsg),
 }
 
 impl Queue {
