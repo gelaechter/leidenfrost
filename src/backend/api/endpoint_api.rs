@@ -5,15 +5,21 @@ use std::{
 };
 
 use async_trait::async_trait;
-use iced::futures::stream;
+use iced::{
+    futures::stream,
+    task::{Sipper, sipper},
+};
 use reqwest::RequestBuilder;
-use sea_orm::{DatabaseConnection, DeriveDisplay};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, DatabaseConnection, DeriveDisplay, EntityTrait, IntoActiveModel,
+};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::backend::{
     api::jellyfin::errors::ApiError,
     data_view::{AlbumView, ArtistView, DiscView, GenreView, PlaylistView, TrackView},
+    db,
 };
 
 /// The different Endpoints that are currently supported
@@ -274,7 +280,7 @@ pub struct GetArtistsParams {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct GetPlaylistParams {
+pub struct GetPlaylistsParams {
     pub pagination: Option<Pagination>,
     pub sorting: Option<Sort<PlaylistSorting>>,
 }
@@ -294,6 +300,94 @@ pub trait MusicEndpoint {
     /// This is used to matched indexed data in the database to the respective
     /// API
     fn get_id(&self) -> String;
+
+    /// Indexes the entire endpoint data into the database
+    /// This allows the endpoints to be used togethe
+    async fn index_data(&self, db: &DatabaseConnection) {
+            // Endpoint ID
+            db::models::endpoint::ActiveModel {
+                id: ActiveValue::Set(self.get_id()),
+            }
+            .insert(db)
+            .await;
+
+            // Artists
+            if let Ok(artist_views) = self
+                .get_artists(GetArtistsParams {
+                    pagination: None,
+                    sorting: None,
+                })
+                .await
+            {
+                let iter = artist_views
+                    .into_iter()
+                    .map(|view| view.artist.into_active_model());
+
+                db::models::artist::Entity::insert_many(iter).exec(db).await;
+            }
+
+            // Albums
+            if let Ok(album_views) = self
+                .get_albums(GetAlbumsParams {
+                    pagination: None,
+                    sorting: None,
+                })
+                .await
+            {
+                let iter = album_views
+                    .into_iter()
+                    .map(|view| view.album.into_active_model());
+
+                db::models::album::Entity::insert_many(iter).exec(db).await;
+            }
+
+            // Tracks
+            if let Ok(artist_views) = self
+                .get_tracks(GetTracksParams {
+                    pagination: None,
+                    sorting: None,
+                })
+                .await
+            {
+                let iter = artist_views
+                    .into_iter()
+                    .map(|view| view.track.into_active_model());
+
+                db::models::track::Entity::insert_many(iter).exec(db).await;
+            }
+
+            // Genres
+            if let Ok(artist_views) = self
+                .get_genres(GetGenresParams {
+                    pagination: None,
+                    sorting: None,
+                })
+                .await
+            {
+                let iter = artist_views
+                    .into_iter()
+                    .map(|view| view.genre.into_active_model());
+
+                db::models::genre::Entity::insert_many(iter).exec(db).await;
+            }
+
+            // Playlist
+            if let Ok(artist_views) = self
+                .get_playlists(GetPlaylistsParams {
+                    pagination: None,
+                    sorting: None,
+                })
+                .await
+            {
+                let iter = artist_views
+                    .into_iter()
+                    .map(|view| view.playlist.into_active_model());
+
+                db::models::playlist::Entity::insert_many(iter)
+                    .exec(db)
+                    .await;
+            }
+    }
 
     /// Fetches a specific track
     async fn get_track(&self, track_id: String) -> Result<TrackView>;
@@ -331,7 +425,7 @@ pub trait MusicEndpoint {
     async fn get_genres(&self, params: GetGenresParams) -> Result<Vec<GenreView>>;
 
     /// Fetches all playlists
-    async fn get_playlists(&self, params: GetPlaylistParams) -> Result<Vec<PlaylistView>>;
+    async fn get_playlists(&self, params: GetPlaylistsParams) -> Result<Vec<PlaylistView>>;
 
     // Fetches a playlist
     async fn get_playlist(&self, playlist_id: String) -> Result<PlaylistView>;
@@ -340,7 +434,7 @@ pub trait MusicEndpoint {
     async fn get_playlist_tracks(
         &self,
         playlist_id: String,
-        params: GetPlaylistParams,
+        params: GetPlaylistsParams,
     ) -> Result<Vec<TrackView>>;
 
     /// Fetches songs containing a search term
@@ -431,7 +525,7 @@ impl MusicEndpoint for EndpointManager {
     }
 
     /// Fetches all playlists
-    async fn get_playlists(&self, params: GetPlaylistParams) -> Result<Vec<PlaylistView>> {
+    async fn get_playlists(&self, params: GetPlaylistsParams) -> Result<Vec<PlaylistView>> {
         todo!()
     }
 
@@ -444,7 +538,7 @@ impl MusicEndpoint for EndpointManager {
     async fn get_playlist_tracks(
         &self,
         playlist_id: String,
-        params: GetPlaylistParams,
+        params: GetPlaylistsParams,
     ) -> Result<Vec<TrackView>> {
         todo!()
     }

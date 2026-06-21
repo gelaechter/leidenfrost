@@ -16,7 +16,7 @@ use iced::{
 
 use crate::{
     backend::{
-        api::endpoint_api::{GetPlaylistParams, MusicEndpoint},
+        api::endpoint_api::{GetPlaylistsParams, MusicEndpoint},
         data_view::PlaylistView,
     },
     ui::{
@@ -102,7 +102,7 @@ impl Sidebar {
                             let endpoints = ENDPOINTS.read().await;
 
                             endpoints
-                                .get_playlists(GetPlaylistParams::default())
+                                .get_playlists(GetPlaylistsParams::default())
                                 .await
                                 .unwrap()
                         },

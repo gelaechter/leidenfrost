@@ -4,7 +4,7 @@ use crate::backend::{
     api::{
         endpoint_api::{
             self, ArtistAlbums, GetAlbumsParams, GetArtistsParams, GetGenresParams,
-            GetPlaylistParams, GetTracksParams, MusicEndpoint, Pagination, SearchParams,
+            GetPlaylistsParams, GetTracksParams, MusicEndpoint, Pagination, SearchParams,
             SearchResult, Sort, UserPasswordAuth,
         },
         jellyfin::{
@@ -14,12 +14,18 @@ use crate::backend::{
         },
     },
     data_view::{AlbumView, ArtistView, DiscView, GenreView, PlaylistView, TrackView},
-    db::models::Disc,
+    db::{
+        self,
+        models::{Disc, artist},
+    },
 };
 
 use async_trait::async_trait;
+use iced::task::{Sipper, sipper};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
-use sea_orm::DatabaseConnection;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, DatabaseConnection, EntityTrait, InsertResult, IntoActiveModel,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use url::Url;
@@ -227,8 +233,6 @@ impl JellyfinApi {
 
         Ok(items)
     }
-
-    pub async fn index_data(&self, db: DatabaseConnection) {}
 }
 
 #[async_trait]
@@ -432,9 +436,9 @@ impl MusicEndpoint for JellyfinApi {
         todo!()
     }
 
-    async fn get_playlists(&self, params: GetPlaylistParams) -> Result<Vec<PlaylistView>> {
+    async fn get_playlists(&self, params: GetPlaylistsParams) -> Result<Vec<PlaylistView>> {
         let user_id = &self.user_id;
-        let GetPlaylistParams {
+        let GetPlaylistsParams {
             pagination,
             sorting,
         } = params;
@@ -466,9 +470,9 @@ impl MusicEndpoint for JellyfinApi {
     async fn get_playlist_tracks(
         &self,
         playlist_id: String,
-        params: GetPlaylistParams,
+        params: GetPlaylistsParams,
     ) -> endpoint_api::Result<Vec<TrackView>> {
-        let GetPlaylistParams {
+        let GetPlaylistsParams {
             pagination,
             sorting,
         } = params;
