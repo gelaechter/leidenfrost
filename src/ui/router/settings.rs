@@ -1,6 +1,6 @@
 pub mod endpoint;
 
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 use iced::{
     Element, Font,
@@ -9,7 +9,6 @@ use iced::{
     widget::{self, row},
 };
 use log::warn;
-use tokio::sync::RwLock;
 
 use crate::{
     backend::api::endpoint_api::{EndpointManager, MusicEndpoint},
@@ -38,9 +37,6 @@ pub struct Settings {
     /// The selected settings tab
     pub tab: Route,
 }
-
-pub static ENDPOINTS: LazyLock<RwLock<EndpointManager>> =
-    LazyLock::new(|| RwLock::new(EndpointManager::default()));
 
 #[derive(Debug, Clone, Default)]
 pub enum Route {
@@ -136,6 +132,7 @@ impl Settings {
                 Task::none()
             }
             Cmd::EndpointMsg(idx, icmsg) => match (idx, icmsg) {
+                // Sync the endpoints
                 (_, ICMsg::Out(endpoint::Out::SyncEndpoints)) => {
                     let local_endpoints: Vec<Arc<dyn MusicEndpoint + Send + Sync>> = self
                         .endpoints
@@ -145,11 +142,12 @@ impl Settings {
                         .collect();
 
                     Task::future(async move {
-                        let mut endpoints = ENDPOINTS.write().await;
-                        (*endpoints).set_selected_endpoints(local_endpoints);
+                        EndpointManager::update_endpoints(local_endpoints).await;
                     })
+                    .chain(Task::future())
                     .discard()
                 }
+                // Remove an endpoint
                 (idx, ICMsg::Out(endpoint::Out::RemoveEndpoint)) => {
                     self.endpoints.remove(idx);
 
@@ -158,6 +156,7 @@ impl Settings {
                         Cmd::EndpointMsg(0, ICMsg::Out(endpoint::Out::SyncEndpoints)).cmd_msg(),
                     )
                 }
+                // Otherwise pass through
                 (idx, ICMsg::Cmd(c)) => self.endpoints[idx]
                     .update(c)
                     .map(move |m| Cmd::EndpointMsg(idx, m).cmd_msg()),

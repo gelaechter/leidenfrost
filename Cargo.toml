@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced = { path = "../iced", features = ["image", "sipper", "tokio", "advanced"] }
+iced = { git = "https://github.com/gelaechter/iced", features = ["image", "sipper", "tokio", "advanced"] }
 libmpv2 = "5.0.3"
 tokio = { version = "1.50.0", features = ["rt"] }
 tokio-stream = { version = "0.1.18", features = ["sync"] }

@@ -29,13 +29,9 @@ pub struct Model {
     pub album_id: String,
     /// The disc this track belongs to
     pub disc_number: i64,
-    /// `(album_id, disc_number)` is the composite key for the discs
-    #[sea_orm(
-        belongs_to,
-        from = "(album_id, disc_number)",
-        to = "(album_id, number)"
-    )]
-    pub disc: HasOne<super::disc::Entity>,
+    /// The album this track belongs to
+    #[sea_orm(belongs_to, from = "album_id", to = "id")]
+    pub disc: HasOne<super::album::Entity>,
     /// The artists who made this song
     #[sea_orm(has_many, via = "artist_tracks")]
     pub artists: HasMany<super::artist::Entity>,

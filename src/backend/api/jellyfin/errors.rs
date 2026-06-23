@@ -1,10 +1,11 @@
 use std::fmt::Debug;
 
 use reqwest::StatusCode;
-use serde::Deserialize;
-use serde::Serialize;
+use sea_orm::DbErr;
 use thiserror::Error;
 use tokio::task::JoinError;
+
+use crate::backend::api::endpoint_api::EndpointType;
 
 /// An enum representing the different types of [`ApiError::RequestError`] \
 /// Automatically coerces into an [`ApiError::RequestError`]
@@ -37,10 +38,17 @@ pub enum ApiError {
     Unauthorized,
     #[error("Request to server failed: {0}")]
     RequestError(RequestError),
-    #[error("Unsupported API call! {0} for Endpoint {1}")]
-    Unsupported(String, String),
+    #[error("Unsupported: Endpoint {endpoint} does not support {call}")]
+    Unsupported {
+        call: String,
+        endpoint: String
+    },
     #[error("Async Error")]
     JoinError,
+    #[error("Database Error: {0}")]
+    DatabaseError(#[from] DbErr),
+    #[error("The requested data point does not exist")]
+    DataNotFound,
 }
 
 impl From<reqwest::Error> for ApiError {

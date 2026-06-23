@@ -16,7 +16,7 @@ use iced::{
 
 use crate::{
     backend::{
-        api::endpoint_api::{GetPlaylistsParams, MusicEndpoint},
+        api::endpoint_api::{EndpointManager, GetPlaylistsParams, MusicEndpoint},
         data_view::PlaylistView,
     },
     ui::{
@@ -25,7 +25,7 @@ use crate::{
             icons,
             image::{self, Image},
         },
-        router::{Route, settings::ENDPOINTS},
+        router::Route,
     },
 };
 
@@ -99,9 +99,9 @@ impl Sidebar {
                     Task::perform(
                         async {
                             // TODO: Replace with global state
-                            let endpoints = ENDPOINTS.read().await;
+                            let endpoint = EndpointManager::get_active_endpoint().await.unwrap();
 
-                            endpoints
+                            endpoint
                                 .get_playlists(GetPlaylistsParams::default())
                                 .await
                                 .unwrap()

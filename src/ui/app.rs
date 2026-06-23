@@ -12,18 +12,14 @@ use iced::{
 };
 
 use iced::widget::pane_grid;
-use url::Url;
 
-use crate::{
-    backend::api::{endpoint_api::UserPasswordAuth, jellyfin::api::JellyfinApi},
-    ui::{
-        ICMsg,
-        player::{self, MpvPlayer, Player, PlayerMsg},
-        playerbar::{self, PlayerBar, PlayerBarMsg},
-        queue::{self, Queue},
-        router::{self, Router, RouterMsg, settings::ENDPOINTS},
-        sidebar::{self, Sidebar, SidebarMsg},
-    },
+use crate::ui::{
+    ICMsg,
+    player::{self, MpvPlayer, Player, PlayerMsg},
+    playerbar::{self, PlayerBar, PlayerBarMsg},
+    queue::{self, Queue},
+    router::{self, Router, RouterMsg},
+    sidebar::{self, Sidebar, SidebarMsg},
 };
 
 /// App is the top level model in this application

@@ -1,9 +1,18 @@
-use crate::backend::db::models::{Album, Artist, Disc, Genre, Playlist, Track};
+use crate::backend::db::models::{Album, Artist, Genre, Playlist, Track};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelatedArtist {
     pub id: String,
     pub name: Option<String>,
+}
+
+impl From<Artist> for RelatedArtist {
+    fn from(artist: Artist) -> Self {
+        RelatedArtist {
+            id: artist.id,
+            name: artist.name,
+        }
+    }
 }
 
 /// This only needs the name as the item itself usually carries the album id
@@ -17,6 +26,15 @@ pub struct RelatedAlbum {
 pub struct RelatedGenre {
     pub id: String,
     pub name: Option<String>,
+}
+
+impl From<Genre> for RelatedGenre {
+    fn from(genre: Genre) -> Self {
+        Self {
+            id: genre.id,
+            name: genre.name,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,13 +65,6 @@ pub struct ArtistView {
     pub artist: Artist,
     /// The summed duration of this artists tracks
     pub duration: Option<i64>,
-}
-
-
-#[derive(Clone, Debug)]
-pub struct DiscView {
-    pub disc: Disc,
-    pub tracks: Vec<TrackView>,
 }
 
 /// A playlist view only holds metadata about a playlist

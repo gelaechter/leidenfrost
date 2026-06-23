@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::LazyLock};
+use std::sync::LazyLock;
 
 use crate::backend::{
     api::{
@@ -13,19 +13,11 @@ use crate::backend::{
             normalize::Normalize,
         },
     },
-    data_view::{AlbumView, ArtistView, DiscView, GenreView, PlaylistView, TrackView},
-    db::{
-        self,
-        models::{Disc, artist},
-    },
+    data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView},
 };
 
 use async_trait::async_trait;
-use iced::task::{Sipper, sipper};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
-use sea_orm::{
-    ActiveModelTrait, ActiveValue, DatabaseConnection, EntityTrait, InsertResult, IntoActiveModel,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use url::Url;
@@ -185,9 +177,15 @@ impl JellyfinApi {
             .headers(self.headers.clone());
 
         // Add pagination
-        if let Some(Pagination { start, limit }) = pagination {
+        if let Some(Pagination {
+            start_page: start,
+            limit,
+        }) = pagination
+        {
             request_builder = request_builder.query(&json!({
-                "Start": start,
+                // Jellyfin uses a record-unit start, meaning
+                // `start=50` indicates we start with the 50tieth record, not page
+                "Start": start * limit,
                 "Limit": limit
             }));
         }
@@ -274,7 +272,7 @@ impl MusicEndpoint for JellyfinApi {
         &self,
         album_id: String,
         params: GetTracksParams,
-    ) -> Result<Vec<DiscView>> {
+    ) -> Result<Vec<TrackView>> {
         let user_id = &self.user_id;
         let GetTracksParams {
             pagination,
@@ -294,25 +292,7 @@ impl MusicEndpoint for JellyfinApi {
             )
             .await?;
 
-        let mut discs = BTreeMap::<i64, DiscView>::new();
-
-        // Sort the tracks into their discs
-        for view in tracks {
-            let number = view.track.disc_number;
-            discs
-                .entry(number)
-                .or_insert_with(|| DiscView {
-                    disc: Disc {
-                        number,
-                        album_id: album_id.clone(),
-                    },
-                    tracks: Vec::new(),
-                })
-                .tracks
-                .push(view);
-        }
-
-        Ok(discs.into_values().collect())
+        Ok(tracks)
     }
 
     async fn get_album(&self, album_id: String) -> Result<AlbumView> {

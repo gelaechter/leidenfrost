@@ -17,10 +17,9 @@ pub struct Model {
     /// worked on the album (i.e. collaborators / guests)
     #[sea_orm(has_many, via = "artist_albums")]
     pub artists: HasMany<super::artist::Entity>,
-    /// The discs this album consists of
-    /// they are what contains the tracks
+    /// The tracks this album consists of
     #[sea_orm(has_many)]
-    pub discs: HasMany<super::disc::Entity>,
+    pub tracks: HasMany<super::track::Entity>,
     /// When this album was released
     pub release_date: Option<NaiveDate>,
     /// The name of this album
@@ -31,3 +30,18 @@ pub struct Model {
 }
 
 impl ActiveModelBehavior for ActiveModel {}
+
+/// A Link to go directly from album to artists
+pub struct AlbumToArtists;
+
+impl Linked for AlbumToArtists {
+    type FromEntity = super::album::Entity;
+    type ToEntity = super::artist::Entity;
+
+    fn link(&self) -> Vec<sea_orm::LinkDef> {
+        vec![
+            super::artist_albums::Relation::Album.def().rev(), // album -> artist_albums
+            super::artist_albums::Relation::Artist.def(),      // artist_albums  -> artist
+        ]
+    }
+}

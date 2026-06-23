@@ -7,17 +7,15 @@ pub mod album;
 pub mod artist;
 pub mod artist_albums;
 pub mod artist_tracks;
-pub mod disc;
+pub mod endpoint;
 pub mod genre;
 pub mod playlist;
 pub mod playlist_tracks;
 pub mod track;
 pub mod track_genres;
-pub mod endpoint;
 
 pub use album::Model as Album;
 pub use artist::Model as Artist;
-pub use disc::Model as Disc;
 pub use genre::Model as Genre;
 pub use playlist::Model as Playlist;
 pub use track::Model as Track;

@@ -9,7 +9,7 @@ use iced::{
 use crate::{
     backend::{
         api::{
-            endpoint_api::{GetTracksParams, MusicEndpoint, Pagination},
+            endpoint_api::{EndpointManager, GetTracksParams, MusicEndpoint, Pagination},
             jellyfin::errors::ApiError,
         },
         data_view::TrackView,
@@ -21,7 +21,6 @@ use crate::{
             table::{self},
             track_table::{self, TrackCellMsg, TrackRow, TrackTable, TrackTableMsg},
         },
-        router::settings::ENDPOINTS,
     },
 };
 
@@ -98,12 +97,12 @@ impl Tracks {
 
                 Task::perform(
                     async {
-                        let endpoints = ENDPOINTS.read().await;
+                        let endpoint = EndpointManager::get_active_endpoint().await.unwrap();
 
-                        endpoints
+                        endpoint
                             .get_tracks(GetTracksParams {
                                 pagination: Some(Pagination {
-                                    start: 0,
+                                    start_page: 0,
                                     limit: 100,
                                 }),
                                 sorting: None,
