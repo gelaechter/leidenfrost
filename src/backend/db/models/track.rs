@@ -54,7 +54,7 @@ pub struct Model {
     /// The URL of this tracks cover image
     pub image_url: Option<super::OrmUrl>,
     /// The blur hash of this tracks cover
-    /// See https://blurha.sh/ for more information
+    /// See <https://blurha.sh>/ for more information
     pub image_blur_hash: Option<String>,
     /// When this track was last played
     pub last_played_at: Option<NaiveDateTime>,

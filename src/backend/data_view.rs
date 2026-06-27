@@ -1,4 +1,8 @@
-use crate::backend::db::models::{Album, Artist, Genre, Playlist, Track};
+use sea_orm::IntoActiveModel;
+
+use crate::backend::db::models::{
+    Album, Artist, Genre, Playlist, Track, album::ActiveModel, artist,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelatedArtist {
@@ -65,6 +69,12 @@ pub struct ArtistView {
     pub artist: Artist,
     /// The summed duration of this artists tracks
     pub duration: Option<i64>,
+}
+
+impl From<ArtistView> for artist::ActiveModel {
+    fn from(value: ArtistView) -> Self {
+        value.artist.into_active_model()
+    }
 }
 
 /// A playlist view only holds metadata about a playlist

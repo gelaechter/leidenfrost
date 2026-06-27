@@ -11,7 +11,10 @@ use iced::{
 use log::warn;
 
 use crate::{
-    backend::api::endpoint_api::{EndpointManager, MusicEndpoint},
+    backend::{
+        api::endpoint_api::{EndpointManager, EndpointType, MusicEndpoint},
+        db::sqlite::IndexableEndpoint,
+    },
     ui::{
         ICMsg, ToCmdMsg, ToOutMsg,
         components::{icons, style::header_text},
@@ -55,7 +58,19 @@ impl Default for Settings {
             font_family: font::Family::SansSerif,
             // All the built in fonts are available by default
             available_font_families: font::Family::VARIANTS.to_vec(),
-            endpoints: Vec::new(),
+            endpoints: vec![Endpoint {
+                id: 0,
+                expanded: true,
+                selected: false,
+                index: true,
+                name: "JF".to_string(),
+                endpoint_type: Some(EndpointType::Jellyfin),
+                endpoint: None,
+                url: "http://***REMOVED***".to_string(),
+                username: "***REMOVED***".to_string(),
+                password: "***REMOVED***".to_string(),
+                error: None,
+            }],
         }
     }
 }
@@ -139,13 +154,28 @@ impl Settings {
                         .clone()
                         .into_iter()
                         .filter_map(|e| e.selected.then_some(e.endpoint).flatten())
+                        .map(|a| a as Arc<dyn MusicEndpoint + Send + Sync>)
                         .collect();
 
-                    Task::future(async move {
-                        EndpointManager::update_endpoints(local_endpoints).await;
-                    })
-                    .chain(Task::future())
-                    .discard()
+                    let set_endpoint_task =
+                        Task::future(EndpointManager::update_endpoints(local_endpoints)).discard();
+
+                    let indexable_endpoints = self.endpoints.clone();
+                    let index_task = Task::future(async move {
+                        for endpoint in indexable_endpoints.into_iter().filter_map(
+                            |Endpoint {
+                                 index, endpoint, ..
+                             }| {
+                                // Only index those which should be indexed
+                                (index).then_some(endpoint).flatten()
+                            },
+                        ) {
+                            log::info!("Indexing endpoint with ID: {}", endpoint.get_id());
+                            EndpointManager::index(endpoint).await;
+                        }
+                    });
+
+                    Task::batch([set_endpoint_task, index_task]).discard()
                 }
                 // Remove an endpoint
                 (idx, ICMsg::Out(endpoint::Out::RemoveEndpoint)) => {

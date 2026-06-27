@@ -5,9 +5,7 @@ use uuid::Uuid;
 
 use crate::backend::{
     api::{
-        endpoint_api::{
-            AlbumSorting, ArtistSorting, GenreSorting, MusicEndpoint, PlaylistSorting, TrackSorting,
-        },
+        endpoint_api::{AlbumSorting, ArtistSorting, GenreSorting, PlaylistSorting, TrackSorting},
         jellyfin::{
             api::JellyfinApi,
             data::{
@@ -19,10 +17,13 @@ use crate::backend::{
     data_view::{
         AlbumView, ArtistView, GenreView, PlaylistView, RelatedArtist, RelatedGenre, TrackView,
     },
-    db::models::{Album, Artist, Genre, Playlist, Track},
+    db::{
+        models::{Album, Artist, Genre, Playlist, Track},
+        sqlite::IndexableEndpoint,
+    },
 };
 
-pub trait Normalize<T, R>: Sized + MusicEndpoint {
+pub trait Normalize<T, R>: Sized + IndexableEndpoint {
     fn normalize(&self, value: T) -> R;
 }
 

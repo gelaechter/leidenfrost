@@ -1,6 +1,7 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::return_self_not_must_use)]
 #![allow(clippy::must_use_candidate)]
+#![feature(vec_into_chunks)]
 
 use crate::ui::app::App;
 use env_logger::Env;

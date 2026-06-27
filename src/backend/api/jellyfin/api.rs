@@ -14,9 +14,11 @@ use crate::backend::{
         },
     },
     data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView},
+    db::sqlite::IndexableEndpoint,
 };
 
 use async_trait::async_trait;
+use regex::Regex;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -124,8 +126,6 @@ impl JellyfinApi {
         P: Serialize + ?Sized,
         Self: Normalize<BaseItemDto, T>,
     {
-        dbg!(&self.headers);
-
         let request_builder = CLIENT
             .get(self.url.join(relative_path)?)
             .headers(self.headers.clone());
@@ -170,11 +170,8 @@ impl JellyfinApi {
         S: Into<ItemSortBy> + std::fmt::Debug + Clone + Default,
         Self: Normalize<BaseItemDto, T>,
     {
-        dbg!(relative_path, &self.headers);
-
-        let mut request_builder = CLIENT
-            .get(self.url.join(relative_path)?)
-            .headers(self.headers.clone());
+        let url = self.url.join(relative_path)?;
+        let mut request_builder = CLIENT.get(url.clone()).headers(self.headers.clone());
 
         // Add pagination
         if let Some(Pagination {
@@ -233,12 +230,14 @@ impl JellyfinApi {
     }
 }
 
-#[async_trait]
-impl MusicEndpoint for JellyfinApi {
+impl IndexableEndpoint for JellyfinApi {
     fn get_id(&self) -> String {
         format!("Jellyfin_{}_{}", self.url, self.user_id)
     }
+}
 
+#[async_trait]
+impl MusicEndpoint for JellyfinApi {
     async fn get_track(&self, track_id: String) -> Result<TrackView> {
         let user_id = &self.user_id;
 
@@ -375,13 +374,15 @@ impl MusicEndpoint for JellyfinApi {
 
     async fn get_artists(&self, params: GetArtistsParams) -> Result<Vec<ArtistView>> {
         let user_id = &self.user_id;
+        log::debug!("get_tracks: {params:?}, {user_id:?}");
+
         let GetArtistsParams {
             pagination,
             sorting,
         } = params;
 
         self.query_items(
-            "/Artists",
+            &format!("/Users/{user_id}/Items"),
             BaseItemKind::MusicArtist,
             pagination,
             sorting,

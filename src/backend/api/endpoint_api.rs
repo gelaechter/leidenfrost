@@ -6,9 +6,7 @@ use std::{
 
 use async_trait::async_trait;
 use reqwest::RequestBuilder;
-use sea_orm::{
-    ActiveModelTrait, ActiveValue, DatabaseConnection, DeriveDisplay, EntityTrait, IntoActiveModel,
-};
+use sea_orm::DeriveDisplay;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OnceCell, RwLock};
 use url::Url;
@@ -16,7 +14,7 @@ use url::Url;
 use crate::backend::{
     api::jellyfin::errors::ApiError,
     data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView},
-    db::{self, sqlite::EndpointDB},
+    db::sqlite::{EndpointDB, IndexableEndpoint},
 };
 
 /// The different Endpoints that are currently supported
@@ -296,11 +294,6 @@ pub trait MusicEndpoint {
     /// Provides the capabilities of this API
     fn capabilities(&self) -> Capabilities;
 
-    /// Provides a unique ID for this API
-    /// This is used to matched indexed data in the database to the respective
-    /// API
-    fn get_id(&self) -> String;
-
     /// Fetches a specific track
     async fn get_track(&self, track_id: String) -> Result<TrackView>;
 
@@ -360,7 +353,7 @@ static ENDPOINTS: OnceCell<RwLock<EndpointManager>> = OnceCell::const_new();
 /// An endpoint manager that provides access to either one or multiple endpoints
 #[derive(Clone)]
 pub struct EndpointManager {
-    index: EndpointDB,
+    local_db: EndpointDB,
     selected_endpoints: Vec<Arc<dyn MusicEndpoint + Send + Sync>>,
 }
 
@@ -368,7 +361,7 @@ impl EndpointManager {
     /// Constructs a new EndpointManager
     async fn new() -> Result<Self> {
         Ok(Self {
-            index: EndpointDB::open().await?,
+            local_db: EndpointDB::open().await?,
             selected_endpoints: Vec::new(),
         })
     }
@@ -380,7 +373,7 @@ impl EndpointManager {
             .await
     }
 
-    /// Updates the endpoints currently available in the manager
+    /// Updates the endpoints currently available to the manager
     pub async fn update_endpoints(
         endpoints: Vec<Arc<dyn MusicEndpoint + Send + Sync>>,
     ) -> Result<()> {
@@ -388,11 +381,6 @@ impl EndpointManager {
         let mut manager = lock.write().await;
 
         manager.selected_endpoints = endpoints;
-
-        // FIXME: This is for testing only, we don't want to enforce indexing
-        for ele in &manager.selected_endpoints {
-        }
-
         Ok(())
     }
 
@@ -403,12 +391,23 @@ impl EndpointManager {
         let manager = lock.read().await;
 
         // Both are cheap to clone ([`Arc`] and [`DatabaseConnection`] respectively)
-        let endpoint = if manager.selected_endpoints.len() == 1 {
-            manager.selected_endpoints[0].clone() as Arc<dyn MusicEndpoint + Send + Sync>
+        // FIXME: Remove false
+        let endpoint = if manager.selected_endpoints.len() == 1 && false {
+            manager.selected_endpoints[0].clone()
         } else {
-            Arc::new(manager.index.clone()) as Arc<dyn MusicEndpoint + Send + Sync>
+            Arc::new(manager.local_db.clone()) as Arc<dyn MusicEndpoint + Send + Sync>
         };
 
         Ok(endpoint)
+    }
+
+    /// Index endpoint
+    pub async fn index(indexable: Arc<dyn IndexableEndpoint + Send + Sync>) -> Result<()> {
+        let lock = Self::get_manager().await?;
+        let manager = lock.read().await;
+
+        indexable.index_data(&manager.local_db.db).await;
+
+        Ok(())
     }
 }

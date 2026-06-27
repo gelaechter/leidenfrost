@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced = { git = "https://github.com/gelaechter/iced", features = ["image", "sipper", "tokio", "advanced"] }
+iced = { git = "https://github.com/gelaechter/iced", features = [
+    "image",
+    "sipper",
+    "tokio",
+    "advanced",
+] }
 libmpv2 = "5.0.3"
 tokio = { version = "1.50.0", features = ["rt"] }
 tokio-stream = { version = "0.1.18", features = ["sync"] }
@@ -33,6 +38,11 @@ bon = "3.9.1"
 mpris-server = "0.10.0"
 zbus = "5.15.0"
 async-trait = "0.1.89"
+regex = "1.12.4"
+
+# Used for testing
+[dev-dependencies]
+httpmock = "0.8.3"
 
 # We use these to parse the icomoon icons
 [build-dependencies]

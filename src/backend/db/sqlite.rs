@@ -1,9 +1,13 @@
+use std::pin::Pin;
+
 use async_trait::async_trait;
+use iced::futures::executor::block_on;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, Database, DatabaseConnection, DeriveIden,
-    EntityTrait, IntoActiveModel, JoinType, ModelTrait, QueryOrder, QuerySelect, RelationTrait,
-    sea_query::Expr,
+    ActiveValue, ColumnTrait, Database, DatabaseConnection, DeriveIden, EntityTrait,
+    IntoActiveModel, Iterable, JoinType, ModelTrait, QueryOrder, QuerySelect, RelationTrait,
+    sea_query::{Expr, OnConflict},
 };
+use tokio::task::LocalSet;
 
 use crate::backend::{
     api::{
@@ -30,89 +34,196 @@ const MODE: &str = "rwc";
 
 /// Trait that indexes an endpoint's data into the database
 /// This allows the endpoints to be used together
-trait IndexableEndpoint: MusicEndpoint {
-    /// Naive implementation which just requests all datatypes without paging
+#[async_trait]
+pub trait IndexableEndpoint: MusicEndpoint {
+    /// Provides a unique ID for this API
+    /// This is used to matched indexed data in the database to the respective
+    /// API
+    fn get_id(&self) -> String;
+
+    /// Naive implementation which just requests all datatypes
     async fn index_data(&self, db: &DatabaseConnection) {
+        log::info!("Indexing endpoint!");
         // Endpoint ID
-        endpoint::ActiveModel {
+        endpoint::Entity::insert(endpoint::ActiveModel {
             id: ActiveValue::Set(self.get_id()),
-        }
-        .insert(db)
-        .await;
+        })
+        .on_conflict_do_nothing() // Allow conflicts if this is already in there
+        .exec(db)
+        .await
+        .unwrap();
+
+        // TODO:
+        // There is probably some way to generalize all of this but i really couldn't be
+        // bothered. Since you are not me feel free to have a go!
 
         // Artists
-        if let Ok(artist_views) = self
+        let mut page = 0;
+        while let Ok(artist_views) = self
             .get_artists(GetArtistsParams {
-                pagination: None,
+                pagination: self.capabilities().pagination.then_some(Pagination {
+                    start_page: page,
+                    limit: 100,
+                }),
                 sorting: None,
             })
             .await
+            && !artist_views.is_empty()
         {
-            let iter = artist_views
+            page += 1;
+            let iter: Vec<artist::ActiveModel> = artist_views
                 .into_iter()
-                .map(|view| view.artist.into_active_model());
+                .map(|view| view.artist.into_active_model())
+                .collect();
 
-            artist::Entity::insert_many(iter).exec(db).await;
+            for chunk in iter.into_chunks::<1000>() {
+                log::debug!("Inserting {} artists:", chunk.len());
+                artist::Entity::insert_many(chunk)
+                    .on_conflict(
+                        OnConflict::column(artist::Column::Id)
+                            .update_columns(<artist::Entity as EntityTrait>::Column::iter())
+                            .to_owned(),
+                    )
+                    .exec(db)
+                    .await
+                    .unwrap();
+            }
         }
 
         // Albums
-        if let Ok(album_views) = self
+        let mut page = 0;
+        while let Ok(album_views) = self
             .get_albums(GetAlbumsParams {
-                pagination: None,
+                pagination: self.capabilities().pagination.then_some(Pagination {
+                    start_page: page,
+                    limit: 100,
+                }),
                 sorting: None,
             })
             .await
+            && !album_views.is_empty()
         {
-            let iter = album_views
-                .into_iter()
-                .map(|view| view.album.into_active_model());
+            page += 1;
 
-            album::Entity::insert_many(iter).exec(db).await;
+            let iter: Vec<album::ActiveModel> = album_views
+                .into_iter()
+                .map(|view| view.album.into_active_model())
+                .collect();
+
+            for chunk in iter.into_chunks::<1000>() {
+                log::debug!("Inserting {} albums:", chunk.len());
+                album::Entity::insert_many(chunk)
+                    .on_conflict(
+                        OnConflict::column(album::Column::Id)
+                            .update_columns(<album::Entity as EntityTrait>::Column::iter())
+                            .to_owned(),
+                    )
+                    .exec(db)
+                    .await
+                    .unwrap();
+            }
         }
 
         // Tracks
-        if let Ok(artist_views) = self
+        let mut page = 0;
+        while let Ok(track_views) = self
             .get_tracks(GetTracksParams {
-                pagination: None,
+                pagination: self.capabilities().pagination.then_some(Pagination {
+                    start_page: page,
+                    limit: 100,
+                }),
                 sorting: None,
             })
             .await
+            && !track_views.is_empty()
         {
-            let iter = artist_views
-                .into_iter()
-                .map(|view| view.track.into_active_model());
+            page += 1;
 
-            track::Entity::insert_many(iter).exec(db).await;
+            let iter: Vec<track::ActiveModel> = track_views
+                .into_iter()
+                .map(|view| view.track.into_active_model())
+                .collect();
+
+            for chunk in iter.into_chunks::<1000>() {
+                log::debug!("Inserting {} tracks:", chunk.len());
+                track::Entity::insert_many(chunk)
+                    .on_conflict(
+                        OnConflict::column(track::Column::Id)
+                            .update_columns(<track::Entity as EntityTrait>::Column::iter())
+                            .to_owned(),
+                    )
+                    .exec(db)
+                    .await
+                    .unwrap();
+            }
         }
 
         // Genres
-        if let Ok(artist_views) = self
+        let mut page = 0;
+        while let Ok(genre_views) = self
             .get_genres(GetGenresParams {
-                pagination: None,
+                pagination: self.capabilities().pagination.then_some(Pagination {
+                    start_page: page,
+                    limit: 100,
+                }),
                 sorting: None,
             })
             .await
+            && !genre_views.is_empty()
         {
-            let iter = artist_views
-                .into_iter()
-                .map(|view| view.genre.into_active_model());
+            page += 1;
 
-            genre::Entity::insert_many(iter).exec(db).await;
+            let iter: Vec<genre::ActiveModel> = genre_views
+                .into_iter()
+                .map(|view| view.genre.into_active_model())
+                .collect();
+
+            for chunk in iter.into_chunks::<1000>() {
+                log::debug!("Inserting {} genres:", chunk.len());
+                genre::Entity::insert_many(chunk)
+                    .on_conflict(
+                        OnConflict::column(genre::Column::Id)
+                            .update_columns(<genre::Entity as EntityTrait>::Column::iter())
+                            .to_owned(),
+                    )
+                    .exec(db)
+                    .await
+                    .unwrap();
+            }
         }
 
         // Playlist
-        if let Ok(artist_views) = self
+        let mut page = 0;
+        while let Ok(playlist_views) = self
             .get_playlists(GetPlaylistsParams {
-                pagination: None,
+                pagination: self.capabilities().pagination.then_some(Pagination {
+                    start_page: page,
+                    limit: 100,
+                }),
                 sorting: None,
             })
             .await
+            && !playlist_views.is_empty()
         {
-            let iter = artist_views
-                .into_iter()
-                .map(|view| view.playlist.into_active_model());
+            page += 1;
 
-            playlist::Entity::insert_many(iter).exec(db).await;
+            let iter: Vec<playlist::ActiveModel> = playlist_views
+                .into_iter()
+                .map(|view| view.playlist.into_active_model())
+                .collect();
+
+            for chunk in iter.into_chunks::<1000>() {
+                log::debug!("Inserting {} playlists:", chunk.len());
+                playlist::Entity::insert_many(chunk)
+                    .on_conflict(
+                        OnConflict::column(playlist::Column::Id)
+                            .update_columns(<playlist::Entity as EntityTrait>::Column::iter())
+                            .to_owned(),
+                    )
+                    .exec(db)
+                    .await
+                    .unwrap();
+            }
         }
     }
 }
@@ -120,7 +231,7 @@ trait IndexableEndpoint: MusicEndpoint {
 /// The local database which acts as an index for endpoints
 #[derive(Debug, Clone)]
 pub struct EndpointDB {
-    db: DatabaseConnection,
+    pub db: DatabaseConnection,
 }
 
 impl EndpointDB {
@@ -131,13 +242,19 @@ impl EndpointDB {
         // TODO: Naive check if database works
         db.ping().await?;
 
-        // Synchronizes database schema with entity definitions
-        //
-        // FIXME: Schema discovery is not Send + Sync the best solution here is probably
-        //  to split database intialization and usage through the EndpointManager.
-        db.get_schema_registry(module_path!().split("::").next().unwrap())
-            .sync(&db)
-            .await?;
+        // Schema discovery is not Send + Sync so we spawn it in a local executor
+        let local = LocalSet::new();
+
+        {
+            let db = db.clone();
+            local.spawn_local(async move {
+                db.get_schema_registry(module_path!().split("::").next().unwrap())
+                    .sync(&db)
+                    .await;
+            });
+
+            block_on(async { local.await });
+        }
 
         Ok(EndpointDB { db })
     }
@@ -148,14 +265,6 @@ impl MusicEndpoint for EndpointDB {
     /// Provides the capabilities of this API
     fn capabilities(&self) -> Capabilities {
         todo!()
-    }
-
-    /// Provides a unique ID for this API
-    /// This is used to matched indexed data in the database to the respective
-    /// API
-    fn get_id(&self) -> String {
-        // Not required since this directly accesses the database
-        String::new()
     }
 
     /// Fetches a specific track
@@ -326,7 +435,8 @@ impl MusicEndpoint for EndpointDB {
 
     /// Fetches all playlists
     async fn get_playlists(&self, params: GetPlaylistsParams) -> Result<Vec<PlaylistView>> {
-        todo!()
+        // TODO:
+        Ok(vec![])
     }
 
     // Fetches a playlist
