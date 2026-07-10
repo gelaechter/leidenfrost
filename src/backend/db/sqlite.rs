@@ -1,5 +1,3 @@
-use std::pin::Pin;
-
 use async_trait::async_trait;
 use iced::futures::executor::block_on;
 use sea_orm::{
@@ -17,20 +15,12 @@ use crate::backend::{
             SearchResult, SortOrder, TrackSorting,
         },
         jellyfin::errors::ApiError,
-    },
-    data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView},
-    db::models::{endpoint, playlist},
+    }, data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView}, db::models::{artist_tracks, endpoint, playlist},
 };
 
 use super::models::{album, artist, genre, track};
 
 type Result<T> = std::result::Result<T, ApiError>;
-
-// TODO: Update path
-const DB_PATH: &str = "/home/***REMOVED***/Projects/randale_iced/test.sqlite";
-
-// Read/Write/Create
-const MODE: &str = "rwc";
 
 /// Trait that indexes an endpoint's data into the database
 /// This allows the endpoints to be used together
@@ -43,7 +33,7 @@ pub trait IndexableEndpoint: MusicEndpoint {
 
     /// Naive implementation which just requests all datatypes
     async fn index_data(&self, db: &DatabaseConnection) {
-        log::info!("Indexing endpoint!");
+        log::info!("Indexing endpoint {}", self.get_id());
         // Endpoint ID
         endpoint::Entity::insert(endpoint::ActiveModel {
             id: ActiveValue::Set(self.get_id()),
@@ -76,9 +66,9 @@ pub trait IndexableEndpoint: MusicEndpoint {
                 .map(|view| view.artist.into_active_model())
                 .collect();
 
-            for chunk in iter.into_chunks::<1000>() {
-                log::debug!("Inserting {} artists:", chunk.len());
-                artist::Entity::insert_many(chunk)
+            for chunk in iter.chunks(1000) {
+                log::debug!("Inserting {} artists", chunk.len());
+                artist::Entity::insert_many(chunk.to_vec())
                     .on_conflict(
                         OnConflict::column(artist::Column::Id)
                             .update_columns(<artist::Entity as EntityTrait>::Column::iter())
@@ -110,9 +100,9 @@ pub trait IndexableEndpoint: MusicEndpoint {
                 .map(|view| view.album.into_active_model())
                 .collect();
 
-            for chunk in iter.into_chunks::<1000>() {
-                log::debug!("Inserting {} albums:", chunk.len());
-                album::Entity::insert_many(chunk)
+            for chunk in iter.chunks(1000) {
+                log::debug!("Inserting {} albums", chunk.len());
+                album::Entity::insert_many(chunk.to_vec())
                     .on_conflict(
                         OnConflict::column(album::Column::Id)
                             .update_columns(<album::Entity as EntityTrait>::Column::iter())
@@ -139,14 +129,16 @@ pub trait IndexableEndpoint: MusicEndpoint {
         {
             page += 1;
 
-            let iter: Vec<track::ActiveModel> = track_views
-                .into_iter()
+            let tracks: Vec<track::ActiveModel> = track_views
+                .iter()
                 .map(|view| view.track.into_active_model())
                 .collect();
 
-            for chunk in iter.into_chunks::<1000>() {
-                log::debug!("Inserting {} tracks:", chunk.len());
-                track::Entity::insert_many(chunk)
+
+
+            for chunk in tracks.chunks(1000) {
+                log::debug!("Inserting {} tracks", chunk.len());
+                track::Entity::insert_many(chunk.to_vec())
                     .on_conflict(
                         OnConflict::column(track::Column::Id)
                             .update_columns(<track::Entity as EntityTrait>::Column::iter())
@@ -178,9 +170,9 @@ pub trait IndexableEndpoint: MusicEndpoint {
                 .map(|view| view.genre.into_active_model())
                 .collect();
 
-            for chunk in iter.into_chunks::<1000>() {
-                log::debug!("Inserting {} genres:", chunk.len());
-                genre::Entity::insert_many(chunk)
+            for chunk in iter.chunks(1000) {
+                log::debug!("Inserting {} genres", chunk.len());
+                genre::Entity::insert_many(chunk.to_vec())
                     .on_conflict(
                         OnConflict::column(genre::Column::Id)
                             .update_columns(<genre::Entity as EntityTrait>::Column::iter())
@@ -212,9 +204,9 @@ pub trait IndexableEndpoint: MusicEndpoint {
                 .map(|view| view.playlist.into_active_model())
                 .collect();
 
-            for chunk in iter.into_chunks::<1000>() {
-                log::debug!("Inserting {} playlists:", chunk.len());
-                playlist::Entity::insert_many(chunk)
+            for chunk in iter.chunks(1000) {
+                log::debug!("Inserting {} playlists", chunk.len());
+                playlist::Entity::insert_many(chunk.to_vec())
                     .on_conflict(
                         OnConflict::column(playlist::Column::Id)
                             .update_columns(<playlist::Entity as EntityTrait>::Column::iter())
@@ -228,6 +220,9 @@ pub trait IndexableEndpoint: MusicEndpoint {
     }
 }
 
+// Read/Write/Create
+const MODE: &str = "rwc";
+
 /// The local database which acts as an index for endpoints
 #[derive(Debug, Clone)]
 pub struct EndpointDB {
@@ -236,8 +231,23 @@ pub struct EndpointDB {
 
 impl EndpointDB {
     pub async fn open() -> Result<Self> {
+        log::debug!("Initializing EndpointDB");
+        // Find the data dir
+        let dir = directories::ProjectDirs::from("", "", "Leidenfrost")
+            .ok_or(ApiError::DbPathInaccessible)?
+            .data_dir()
+            .to_path_buf();
+
+        std::fs::create_dir_all(&dir).map_err(|_| ApiError::DbPathInaccessible)?;
+
+        let path = dir
+            .join("local_index.sqlite")
+            .into_string()
+            .map_err(|_| ApiError::DbPathInaccessible)?;
+
+        // Open db
         let db: DatabaseConnection =
-            Database::connect(format!("sqlite://{DB_PATH}?mode={MODE}")).await?;
+            Database::connect(format!("sqlite://{path}?mode={MODE}")).await?;
 
         // TODO: Naive check if database works
         db.ping().await?;

@@ -62,6 +62,7 @@ pub enum SearchResult {
 /// Differentiating between "appears on"- and "created by"-albums can
 /// technically be done through checking if the artist is part of the albums
 /// album-artists list but doing it this way is nicer IMO
+#[derive(Clone)]
 pub struct ArtistAlbums {
     /// Albums an artist has a track on
     pub appears_on: Vec<AlbumView>,
@@ -137,7 +138,7 @@ pub static FULL_CAPABILITIES: LazyLock<Capabilities> = LazyLock::new(|| Capabili
 
 impl Capabilities {
     /// Produces the intersection of two capabilities, thus
-    pub fn intersection(self, other: Capabilities) -> Capabilities {
+    pub fn intersection(self, other: &Capabilities) -> Capabilities {
         Capabilities {
             pagination: self.pagination && other.pagination,
             image_sizing: self.pagination && other.pagination,
@@ -346,6 +347,33 @@ pub trait MusicEndpoint {
     async fn search(&self, search_term: String, params: SearchParams) -> Result<Vec<SearchResult>>;
 }
 
+/// Is it an online or an offline endpoint
+#[derive(Clone, Debug)]
+pub enum EndpointKind {
+    Online {
+        /// The endpoint
+        endpoint: Arc<dyn MusicEndpoint + Send + Sync>,
+    },
+    Indexable {
+        /// Is indexing activated
+        indexing: bool,
+        /// The indexable endpoint
+        endpoint: Arc<dyn IndexableEndpoint + Send + Sync>,
+    },
+}
+
+impl EndpointKind {
+    pub fn unwrap(self) -> Arc<dyn MusicEndpoint + Send + Sync> {
+        match self {
+            EndpointKind::Online { endpoint: e } => e as Arc<dyn MusicEndpoint + Send + Sync>,
+            EndpointKind::Indexable {
+                endpoint: e,
+                indexing: _,
+            } => e as Arc<dyn MusicEndpoint + Send + Sync>,
+        }
+    }
+}
+
 // Tokio OnceCell and RwLock since we need to write/access the EndpointManager
 // from async contexts anyways
 static ENDPOINTS: OnceCell<RwLock<EndpointManager>> = OnceCell::const_new();
@@ -354,16 +382,19 @@ static ENDPOINTS: OnceCell<RwLock<EndpointManager>> = OnceCell::const_new();
 #[derive(Clone)]
 pub struct EndpointManager {
     local_db: EndpointDB,
-    selected_endpoints: Vec<Arc<dyn MusicEndpoint + Send + Sync>>,
+    selected_endpoints: Vec<EndpointKind>,
 }
 
 impl EndpointManager {
-    /// Constructs a new EndpointManager
+    /// Constructs a new `EndpointManager`
     async fn new() -> Result<Self> {
-        Ok(Self {
+        log::debug!("Initializing EndpointManager");
+        let endpoint_manager = Self {
             local_db: EndpointDB::open().await?,
             selected_endpoints: Vec::new(),
-        })
+        };
+        log::debug!("Initialized EndpointManager!");
+        Ok(endpoint_manager)
     }
 
     /// Gets or initializes the global EndpointManager instance
@@ -374,11 +405,11 @@ impl EndpointManager {
     }
 
     /// Updates the endpoints currently available to the manager
-    pub async fn update_endpoints(
-        endpoints: Vec<Arc<dyn MusicEndpoint + Send + Sync>>,
-    ) -> Result<()> {
+    pub async fn update_endpoints(endpoints: Vec<EndpointKind>) -> Result<()> {
+        log::debug!("update_endpoints: trying to acquire manager lock!");
         let lock = Self::get_manager().await?;
         let mut manager = lock.write().await;
+        log::debug!("update_endpoints: got manager lock!");
 
         manager.selected_endpoints = endpoints;
         Ok(())
@@ -387,13 +418,15 @@ impl EndpointManager {
     /// Will either return the active endpoint if [`Self::selected_endpoints`]
     /// as a single entry or return the LocalIndex
     pub async fn get_active_endpoint() -> Result<Arc<dyn MusicEndpoint + Send + Sync>> {
+        log::debug!("get_active_endpoint: trying to acquire manager lock!");
         let lock = Self::get_manager().await?;
         let manager = lock.read().await;
+        log::debug!("get_active_endpoint: got manager lock!");
 
         // Both are cheap to clone ([`Arc`] and [`DatabaseConnection`] respectively)
         // FIXME: Remove false
         let endpoint = if manager.selected_endpoints.len() == 1 && false {
-            manager.selected_endpoints[0].clone()
+            manager.selected_endpoints[0].clone().unwrap()
         } else {
             Arc::new(manager.local_db.clone()) as Arc<dyn MusicEndpoint + Send + Sync>
         };
@@ -401,12 +434,20 @@ impl EndpointManager {
         Ok(endpoint)
     }
 
-    /// Index endpoint
-    pub async fn index(indexable: Arc<dyn IndexableEndpoint + Send + Sync>) -> Result<()> {
+    /// Index all the endpoints which are currently set to index
+    pub async fn index_all_endpoints() -> Result<()> {
+        log::debug!("index_all_endpoints: trying to acquire manager lock!");
         let lock = Self::get_manager().await?;
         let manager = lock.read().await;
+        log::debug!("index_all_endpoints: got manager lock!");
 
-        indexable.index_data(&manager.local_db.db).await;
+        for indexable_endpoint in manager.selected_endpoints.iter().filter_map(|e| match e {
+            // Only index indexable endpoints which have indexing activated
+            EndpointKind::Indexable { indexing, endpoint } if *indexing => Some(endpoint.clone()),
+            _ => None,
+        }) {
+            indexable_endpoint.index_data(&manager.local_db.db).await;
+        }
 
         Ok(())
     }

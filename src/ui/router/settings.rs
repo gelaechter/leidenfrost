@@ -1,7 +1,5 @@
 pub mod endpoint;
 
-use std::sync::Arc;
-
 use iced::{
     Element, Font,
     Length::{self, Fill, FillPortion, Shrink},
@@ -11,14 +9,11 @@ use iced::{
 use log::warn;
 
 use crate::{
-    backend::{
-        api::endpoint_api::{EndpointManager, EndpointType, MusicEndpoint},
-        db::sqlite::IndexableEndpoint,
-    },
+    backend::api::endpoint_api::{EndpointKind, EndpointManager, EndpointType},
     ui::{
         ICMsg, ToCmdMsg, ToOutMsg,
         components::{icons, style::header_text},
-        router::settings::endpoint::{Endpoint, EndpointMsg},
+        router::settings::endpoint::{EndpointMsg, EndpointSettings},
     },
 };
 
@@ -36,7 +31,7 @@ pub struct Settings {
     /// Fonts fetched by the system
     available_font_families: Vec<font::Family>,
     /// The configured music endpoints
-    pub endpoints: Vec<Endpoint>,
+    pub endpoints: Vec<EndpointSettings>,
     /// The selected settings tab
     pub tab: Route,
 }
@@ -58,7 +53,7 @@ impl Default for Settings {
             font_family: font::Family::SansSerif,
             // All the built in fonts are available by default
             available_font_families: font::Family::VARIANTS.to_vec(),
-            endpoints: vec![Endpoint {
+            endpoints: vec![EndpointSettings {
                 id: 0,
                 expanded: true,
                 selected: false,
@@ -149,33 +144,28 @@ impl Settings {
             Cmd::EndpointMsg(idx, icmsg) => match (idx, icmsg) {
                 // Sync the endpoints
                 (_, ICMsg::Out(endpoint::Out::SyncEndpoints)) => {
-                    let local_endpoints: Vec<Arc<dyn MusicEndpoint + Send + Sync>> = self
+                    let local_endpoints: Vec<EndpointKind> = self
                         .endpoints
                         .clone()
                         .into_iter()
                         .filter_map(|e| e.selected.then_some(e.endpoint).flatten())
-                        .map(|a| a as Arc<dyn MusicEndpoint + Send + Sync>)
                         .collect();
 
-                    let set_endpoint_task =
-                        Task::future(EndpointManager::update_endpoints(local_endpoints)).discard();
+                    let set_endpoint_task: Task<()> = Task::future(async move {
+                        log::info!("set_endpoint_task");
+                        EndpointManager::update_endpoints(local_endpoints)
+                            .await
+                            .unwrap();
+                    })
+                    .discard();
 
-                    let indexable_endpoints = self.endpoints.clone();
                     let index_task = Task::future(async move {
-                        for endpoint in indexable_endpoints.into_iter().filter_map(
-                            |Endpoint {
-                                 index, endpoint, ..
-                             }| {
-                                // Only index those which should be indexed
-                                (index).then_some(endpoint).flatten()
-                            },
-                        ) {
-                            log::info!("Indexing endpoint with ID: {}", endpoint.get_id());
-                            EndpointManager::index(endpoint).await;
-                        }
+                        log::info!("index_task");
+                        EndpointManager::index_all_endpoints().await.unwrap();
                     });
 
-                    Task::batch([set_endpoint_task, index_task]).discard()
+                    log::info!("starting both tasks");
+                    set_endpoint_task.chain(index_task).discard()
                 }
                 // Remove an endpoint
                 (idx, ICMsg::Out(endpoint::Out::RemoveEndpoint)) => {
@@ -192,7 +182,7 @@ impl Settings {
                     .map(move |m| Cmd::EndpointMsg(idx, m).cmd_msg()),
             },
             Cmd::CreateEndpoint => {
-                self.endpoints.push(Endpoint::default());
+                self.endpoints.push(EndpointSettings::default());
                 Task::none()
             }
         })

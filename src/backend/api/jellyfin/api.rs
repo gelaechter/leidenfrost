@@ -1,11 +1,12 @@
-use std::sync::LazyLock;
+use std::{collections::HashSet, sync::LazyLock};
 
 use crate::backend::{
     api::{
         endpoint_api::{
-            self, ArtistAlbums, GetAlbumsParams, GetArtistsParams, GetGenresParams,
-            GetPlaylistsParams, GetTracksParams, MusicEndpoint, Pagination, SearchParams,
-            SearchResult, Sort, UserPasswordAuth,
+            self, AlbumSorting, ArtistAlbums, ArtistSorting, Capabilities, GenreSorting,
+            GetAlbumsParams, GetArtistsParams, GetGenresParams, GetPlaylistsParams,
+            GetTracksParams, MusicEndpoint, Pagination, PlaylistSorting, SearchParams,
+            SearchResult, Sort, TrackSorting, UserPasswordAuth,
         },
         jellyfin::{
             data::{BaseItemDto, BaseItemDtoQueryResult, BaseItemKind, ItemSortBy},
@@ -18,7 +19,6 @@ use crate::backend::{
 };
 
 use async_trait::async_trait;
-use regex::Regex;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -180,9 +180,9 @@ impl JellyfinApi {
         }) = pagination
         {
             request_builder = request_builder.query(&json!({
-                // Jellyfin uses a record-unit start, meaning
+                // Jellyfin uses a item-index start, meaning
                 // `start=50` indicates we start with the 50tieth record, not page
-                "Start": start * limit,
+                "StartIndex": start * limit,
                 "Limit": limit
             }));
         }
@@ -200,7 +200,13 @@ impl JellyfinApi {
             // https://typescript-sdk.jellyfin.org/interfaces/generated-client.ItemsApiGetItemsRequest.html
             .query(&json!({
                 "Recursive": true,
-                "IncludeItemTypes": item_kind,
+                "IncludeItemTypes": if item_kind == BaseItemKind::MusicGenre {
+                    // For some reason jellyfins /Genres endpoint returns nothing if IncludeItemTypes=MusicGenre
+                    // Anything else works
+                    BaseItemKind::UserRootFolder
+                } else {
+                    item_kind
+                },
             }))
             .query(additional_params)
             .send()
@@ -246,8 +252,6 @@ impl MusicEndpoint for JellyfinApi {
     }
 
     async fn get_tracks(&self, params: GetTracksParams) -> Result<Vec<TrackView>> {
-        log::debug!("get_tracks: {params:?}");
-
         let user_id = &self.user_id;
         let GetTracksParams {
             pagination,
@@ -374,7 +378,6 @@ impl MusicEndpoint for JellyfinApi {
 
     async fn get_artists(&self, params: GetArtistsParams) -> Result<Vec<ArtistView>> {
         let user_id = &self.user_id;
-        log::debug!("get_tracks: {params:?}, {user_id:?}");
 
         let GetArtistsParams {
             pagination,
@@ -435,7 +438,53 @@ impl MusicEndpoint for JellyfinApi {
     }
 
     fn capabilities(&self) -> endpoint_api::Capabilities {
-        todo!()
+        Capabilities {
+            pagination: true,
+            image_sizing: true,
+            indexable: true,
+            track_sorting: HashSet::from([
+                TrackSorting::Album,
+                TrackSorting::AlbumArtist,
+                TrackSorting::Title,
+                TrackSorting::Artist,
+                TrackSorting::Duration,
+                TrackSorting::PlayCount,
+                TrackSorting::Random,
+                TrackSorting::DateAdded,
+                TrackSorting::DatePlayed,
+                TrackSorting::DateReleased,
+            ]),
+            album_sorting: HashSet::from([
+                AlbumSorting::Name,
+                AlbumSorting::AlbumArtist,
+                AlbumSorting::TrackCount,
+                AlbumSorting::Duration,
+                AlbumSorting::DateAdded,
+                AlbumSorting::DateReleased,
+                AlbumSorting::Random,
+            ]),
+            artist_sorting: HashSet::from([
+                ArtistSorting::Name,
+                ArtistSorting::AlbumCount,
+                ArtistSorting::TrackCount,
+                ArtistSorting::Duration,
+                ArtistSorting::Random,
+            ]),
+            playlist_sorting: HashSet::from([
+                PlaylistSorting::Name,
+                PlaylistSorting::AlbumCount,
+                PlaylistSorting::TrackCount,
+                PlaylistSorting::Duration,
+                PlaylistSorting::Random,
+            ]),
+            genre_sorting: HashSet::from([
+                GenreSorting::Name,
+                GenreSorting::AlbumCount,
+                GenreSorting::TrackCount,
+                GenreSorting::Duration,
+                GenreSorting::Random,
+            ]),
+        }
     }
 
     async fn get_playlist(&self, playlist_id: String) -> endpoint_api::Result<PlaylistView> {

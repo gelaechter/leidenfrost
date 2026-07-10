@@ -91,7 +91,8 @@ impl Albums {
                         "***REMOVED***".to_string(),
                         "***REMOVED***".to_string(),
                     )
-                    .await.unwrap();
+                    .await
+                    .unwrap();
 
                     jf.get_albums(GetAlbumsParams::default()).await.unwrap()
                 })

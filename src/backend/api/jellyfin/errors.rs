@@ -39,16 +39,15 @@ pub enum ApiError {
     #[error("Request to server failed: {0}")]
     RequestError(RequestError),
     #[error("Unsupported: Endpoint {endpoint} does not support {call}")]
-    Unsupported {
-        call: String,
-        endpoint: String
-    },
-    #[error("Async Error")]
-    JoinError,
-    #[error("Database Error: {0}")]
-    DatabaseError(#[from] DbErr),
+    Unsupported { call: String, endpoint: String },
     #[error("The requested data point does not exist")]
     DataNotFound,
+    #[error("Cannot access database directory")]
+    DbPathInaccessible,
+    #[error("Database Error: {0}")]
+    DbError(#[from] DbErr),
+    #[error("Async Error")]
+    JoinError,
 }
 
 impl From<reqwest::Error> for ApiError {

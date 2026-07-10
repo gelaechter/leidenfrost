@@ -7,14 +7,23 @@ Leidenfrost is planned to allow using multiple different music endpoints. Curren
 - [Spotify](https://spotify.com/)
 - local filesystem
 
-Beyond selecting just one of these, it is planned that Leidenfrost allows using multiple endpoints in conjunction.
+One design goal is allowing granting two ways of access to these endpoints:
+  - *Online Access*: The default way of accessing an endpoint, all the data is fetched ad-hoc
+  - *Indexed Access*: All data an endpoint could provide to leidenfrost will be accessed and indexed,
+    Then instead of fetching data ad-hoc we instead use the index.
+
+## Online Requesting
+
+
+
 
 ## Indexing
 
+Beyond selecting just one of these, it is planned that Leidenfrost allows using multiple endpoints in conjunction.
 This requires an endpoint to be indexable, meaning Leidenfrost can cache the entirety of the endpoint library in its internal DB.
 Otherwise using multiple endpoints would break pagination or sorting:
 - We would need to disable pagination to fetch ALL entries so we can sort them ourselves
-- We would need to disable sorting since fetches pages are not guaranteed to contain the same ranges of order. \
+- We would need to disable sorting since fetched pages are not guaranteed to contain the same ranges of order. \
   (Endpoint A could return entries A.. to C.. on page one, while endpoint B returns entries A.. to G.. on page one)
 
 *Search and specific album/artist pages work as usual, since these are not meant to be ordered.*

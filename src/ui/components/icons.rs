@@ -5,6 +5,18 @@ use iced::{
     widget::{self, Text, text::Catalog},
 };
 
+pub fn trash<'a, Theme: Catalog + 'a, Renderer: text::Renderer<Font = Font>>() -> Text<'a, Theme, Renderer> {
+    widget::text('\u{f182}').font("leidenfrost")
+}
+
+pub fn spotify<'a, Theme: Catalog + 'a, Renderer: text::Renderer<Font = Font>>() -> Text<'a, Theme, Renderer> {
+    widget::text('\u{f0c4}').font("leidenfrost")
+}
+
+pub fn navidrome<'a, Theme: Catalog + 'a, Renderer: text::Renderer<Font = Font>>() -> Text<'a, Theme, Renderer> {
+    widget::text('\u{f000}').font("leidenfrost")
+}
+
 pub fn jellyfin<'a, Theme: Catalog + 'a, Renderer: text::Renderer<Font = Font>>() -> Text<'a, Theme, Renderer> {
     widget::text('\u{f160}').font("leidenfrost")
 }
@@ -156,4 +168,3 @@ pub fn square_filled<'a, Theme: Catalog + 'a, Renderer: text::Renderer<Font = Fo
 pub fn square<'a, Theme: Catalog + 'a, Renderer: text::Renderer<Font = Font>>() -> Text<'a, Theme, Renderer> {
     widget::text('\u{f25c}').font("leidenfrost")
 }
-
