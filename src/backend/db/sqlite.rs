@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use async_trait::async_trait;
 use iced::futures::executor::block_on;
 use sea_orm::{
@@ -15,7 +17,9 @@ use crate::backend::{
             SearchResult, SortOrder, TrackSorting,
         },
         jellyfin::errors::ApiError,
-    }, data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView}, db::models::{artist_tracks, endpoint, playlist},
+    },
+    data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView},
+    db::models::{endpoint, playlist},
 };
 
 use super::models::{album, artist, genre, track};
@@ -130,11 +134,9 @@ pub trait IndexableEndpoint: MusicEndpoint {
             page += 1;
 
             let tracks: Vec<track::ActiveModel> = track_views
-                .iter()
+                .into_iter()
                 .map(|view| view.track.into_active_model())
                 .collect();
-
-
 
             for chunk in tracks.chunks(1000) {
                 log::debug!("Inserting {} tracks", chunk.len());
@@ -240,8 +242,13 @@ impl EndpointDB {
 
         std::fs::create_dir_all(&dir).map_err(|_| ApiError::DbPathInaccessible)?;
 
-        let path = dir
-            .join("local_index.sqlite")
+        let path = dir.join("local_index.sqlite");
+
+        Self::open_with_path(path).await
+    }
+
+    pub async fn open_with_path(path: PathBuf) -> Result<Self> {
+        let path = path
             .into_string()
             .map_err(|_| ApiError::DbPathInaccessible)?;
 

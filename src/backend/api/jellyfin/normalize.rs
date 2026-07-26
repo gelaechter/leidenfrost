@@ -450,7 +450,6 @@ impl Normalize<BaseItemDto, ArtistView> for JellyfinApi {
         ArtistView {
             artist,
             duration: run_time_ticks.map(|t| t / 10_000_000),
-            albums: todo!(),
         }
     }
 }

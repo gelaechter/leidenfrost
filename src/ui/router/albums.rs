@@ -18,7 +18,9 @@ use url::Url;
 use crate::{
     backend::{
         api::{
-            endpoint_api::{GetAlbumsParams, MusicEndpoint, UserPasswordAuth},
+            endpoint_api::{
+                EndpointManager, GetAlbumsParams, MusicEndpoint, Pagination, UserPasswordAuth,
+            },
             jellyfin::api::JellyfinApi,
         },
         data_view::{AlbumView, RelatedArtist},
@@ -85,16 +87,18 @@ impl Albums {
                 }
 
                 Task::future(async {
-                    // TODO: Replace with global state
-                    let jf = JellyfinApi::auth_user_password(
-                        Url::parse("http://***REMOVED***").unwrap(),
-                        "***REMOVED***".to_string(),
-                        "***REMOVED***".to_string(),
-                    )
-                    .await
-                    .unwrap();
+                    let endpoint = EndpointManager::get_active_endpoint().await.unwrap();
 
-                    jf.get_albums(GetAlbumsParams::default()).await.unwrap()
+                    endpoint
+                        .get_albums(GetAlbumsParams {
+                            pagination: Some(Pagination {
+                                start_page: 0,
+                                limit: 100,
+                            }),
+                            sorting: None,
+                        })
+                        .await
+                        .unwrap()
                 })
                 .then(|albums| {
                     // After fetching convert the track_views into rowdata

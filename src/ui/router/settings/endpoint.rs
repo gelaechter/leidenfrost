@@ -49,7 +49,8 @@ pub struct EndpointSettings {
     pub username: String,
     /// The password (if it has one) of this Endpoint
     pub password: String,
-    /// If the endpoint has been tested successfully
+    /// [`None`] if the endpoint has been tested successfully \
+    /// Otherwise contains an error that describes the failure
     pub error: Option<Error>,
 }
 

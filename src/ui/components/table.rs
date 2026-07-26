@@ -104,7 +104,7 @@ pub struct Row<T> {
     selected: bool,
     /// Tracking when a row was last clicked to register double clicks
     ///
-    /// TODO: Consider stealing™ the decorator/double_click widget from halloy:
+    /// TODO: Consider stealing™ the `decorator/double_click` widget from halloy:
     /// <https://github.com/squidowl/halloy/blob/c3f2e4a30a1ac787342495640eb5de671de6d695/src/widget/double_click.rs>
     clicked_at: Option<Instant>,
 }
@@ -123,7 +123,7 @@ impl<T> Row<T> {
 /// A function that produces the header of a column
 /// while this header can produce an arbitrary Message `M`, it will not be
 /// driven or reacted to.
-type ColumnHeader<M> = Box<dyn for<'a> Fn() -> Element<'static, M> + 'static>;
+type ColumnHeader<M> = Box<dyn Fn() -> Element<'static, M> + 'static>;
 
 /// A function that presents the row state in a column
 type ColumnView<T, M> = Box<dyn for<'a> Fn(&'a T) -> Element<'a, M> + 'static>;
@@ -250,8 +250,8 @@ const ANTICIPATED_ROWS: u32 = 2;
 /// The amount of rows per chunk
 const CHUNK_SIZE: usize = 100;
 
-/// A table message containing of 
-/// - T: The table type
+/// A table message defined by
+/// - T: The table data type
 /// - M: The cell message
 pub type TableMsg<T, M> = ICMsg<Cmd<M>, Out<T>>;
 

@@ -62,7 +62,7 @@ pub enum SearchResult {
 /// Differentiating between "appears on"- and "created by"-albums can
 /// technically be done through checking if the artist is part of the albums
 /// album-artists list but doing it this way is nicer IMO
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ArtistAlbums {
     /// Albums an artist has a track on
     pub appears_on: Vec<AlbumView>,
@@ -174,8 +174,7 @@ impl Capabilities {
 
 #[derive(Debug, Clone)]
 pub struct Pagination {
-    /// Which page to start with
-    /// this is zero indexed
+    /// Which page to start with; This is zero indexed
     pub start_page: u64,
     /// How many records one page should contain
     pub limit: u64,

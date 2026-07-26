@@ -1,8 +1,6 @@
 use sea_orm::IntoActiveModel;
 
-use crate::backend::{api::endpoint_api::ArtistAlbums, db::models::{
-    Album, Artist, Genre, Playlist, Track, artist,
-}};
+use crate::backend::db::models::{Album, Artist, Genre, Playlist, Track, artist};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelatedArtist {
@@ -67,8 +65,6 @@ pub struct AlbumView {
 #[derive(Clone, Debug)]
 pub struct ArtistView {
     pub artist: Artist,
-    /// The albums an artist published
-    pub albums: Vec<ArtistAlbums>,
     /// The summed duration of this artists tracks
     pub duration: Option<i64>,
 }

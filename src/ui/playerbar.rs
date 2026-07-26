@@ -16,7 +16,9 @@ use crate::{
     ui::{
         ToCmdMsg, ToOutMsg,
         components::{
-            icons, style::{EM_DASH, muted_text}, utils::{IntoLink, IntoLinks, format_duration}
+            icons,
+            style::{EM_DASH, muted_text},
+            utils::{IntoLink, IntoLinks, format_duration},
         },
         player::{PlayerEvent, RepeatMode},
         router::Route,

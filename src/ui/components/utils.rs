@@ -107,5 +107,5 @@ pub fn format_duration(seconds: f64) -> String {
     let total_secs = duration.as_secs();
     let minutes = total_secs / 60;
     let seconds = total_secs % 60;
-    format!("{}:{:02}", minutes, seconds)
+    format!("{minutes}:{seconds:02}")
 }
