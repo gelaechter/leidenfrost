@@ -1,0 +1,48 @@
+[package]
+name = "leidenfrost"
+version.workspace = true
+authors.workspace = true
+edition = "2024"
+
+[dependencies]
+iced = { git = "https://github.com/gelaechter/iced", features = [
+    "image",
+    "sipper",
+    "tokio",
+    "advanced",
+] }
+libmpv2 = "6.0.0"
+blurhash = "0.2.3"
+bytes = "1.11.1"
+env_logger = "0.11.10"
+mpris-server = "0.10.0"
+zbus = "5.15.0"
+
+backend = { package = "leidenfrost_backend", path = "../backend" }
+
+tokio.workspace = true
+tokio-stream.workspace = true
+console-subscriber = { workspace = true, optional = true }
+serde.workspace = true
+chrono.workspace = true
+url.workspace = true
+thiserror.workspace = true
+color-eyre.workspace = true
+reqwest.workspace = true
+log.workspace = true
+uuid.workspace = true
+
+[features]
+default = []
+debug = [
+    "backend/debug",
+    "iced/debug",
+    "iced/time-travel",
+    "tokio/tracing",
+    "dep:console-subscriber",
+]
+
+# We use these to parse the icomoon icons
+[build-dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { package = "serde_json_path_to_error", version = "0.1.5" }
