@@ -3196,6 +3196,7 @@ dependencies = [
  "color-eyre",
  "console-subscriber",
  "directories",
+ "env_logger",
  "http-serde",
  "libmpv2",
  "log",

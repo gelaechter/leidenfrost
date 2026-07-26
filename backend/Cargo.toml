@@ -16,8 +16,9 @@ http-serde = "2.1.1"
 async-trait = "0.1.89"
 directories = "6.0.0"
 libmpv2 = "6.0.0"
+env_logger = "0.11.11"
 
-tokio.workspace = true
+tokio = { workspace = true, features = ["macros"] }
 tokio-stream.workspace = true
 console-subscriber = { workspace = true, optional = true }
 serde.workspace = true

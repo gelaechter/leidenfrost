@@ -195,19 +195,23 @@ impl JellyfinApi {
             }));
         }
 
-        let response = request_builder
+        let request = request_builder
             // See here for query parameters
             // https://typescript-sdk.jellyfin.org/interfaces/generated-client.ItemsApiGetItemsRequest.html
             .query(&json!({
                 "Recursive": true,
-                "IncludeItemTypes": if item_kind == BaseItemKind::MusicGenre {
-                    // For some reason jellyfins /Genres endpoint returns nothing if IncludeItemTypes=MusicGenre
-                    // Anything else works
-                    BaseItemKind::UserRootFolder
-                } else {
-                    item_kind
-                },
-            }))
+            }));
+
+        // For some reason jellyfins data specific endpoints (e.g. `/Artists`) don't
+        // play nice with IncludeItemTypes so we omit it in that case
+        let request = match item_kind {
+            BaseItemKind::MusicGenre | BaseItemKind::MusicArtist => request,
+            _ => request.query(&json!({
+                "IncludeItemTypes": item_kind
+            })),
+        };
+
+        let response = request
             .query(additional_params)
             .send()
             .await?
@@ -385,7 +389,27 @@ impl MusicEndpoint for JellyfinApi {
         } = params;
 
         self.query_items(
-            &format!("/Users/{user_id}/Items"),
+            "/Artists",
+            BaseItemKind::MusicArtist,
+            pagination,
+            sorting,
+            &json!({
+                "UserId": user_id
+            }),
+        )
+        .await
+    }
+
+    async fn get_album_artists(&self, params: GetArtistsParams) -> Result<Vec<ArtistView>> {
+        let user_id = &self.user_id;
+
+        let GetArtistsParams {
+            pagination,
+            sorting,
+        } = params;
+
+        self.query_items(
+            "/Artists/AlbumArtists",
             BaseItemKind::MusicArtist,
             pagination,
             sorting,
@@ -436,12 +460,13 @@ impl MusicEndpoint for JellyfinApi {
         )
         .await
     }
-
+    
     fn capabilities(&self) -> endpoint_api::Capabilities {
         Capabilities {
             pagination: true,
             image_sizing: true,
             indexable: true,
+            split_artists: true,
             track_sorting: HashSet::from([
                 TrackSorting::Album,
                 TrackSorting::AlbumArtist,

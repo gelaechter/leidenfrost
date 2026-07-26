@@ -3,10 +3,14 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use sea_orm::{
     ActiveValue, ColumnTrait, Database, DatabaseConnection, DeriveIden, EntityTrait,
-    IntoActiveModel, Iterable, JoinType, ModelTrait, QueryOrder, QuerySelect, RelationTrait,
+    IntoActiveModel, Iterable, ModelTrait, QueryOrder, QuerySelect, QueryTrait,
     sea_query::{Expr, OnConflict},
 };
-use tokio::task::LocalSet;
+use tokio::{
+    runtime::Builder,
+    sync::{mpsc, oneshot},
+    task::LocalSet,
+};
 
 use crate::{
     api::{
@@ -18,7 +22,7 @@ use crate::{
         jellyfin::errors::ApiError,
     },
     data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView},
-    db::models::{endpoint, playlist},
+    db::models::{artist_albums, endpoint, playlist},
 };
 
 use super::models::{album, artist, genre, track};
@@ -83,6 +87,40 @@ pub trait IndexableEndpoint: MusicEndpoint {
             }
         }
 
+        // Album artists (AFAIK Jellyfin specific)
+        let mut page = 0;
+        while self.capabilities().split_artists
+            && let Ok(artist_views) = self
+                .get_album_artists(GetArtistsParams {
+                    pagination: self.capabilities().pagination.then_some(Pagination {
+                        start_page: page,
+                        limit: 100,
+                    }),
+                    sorting: None,
+                })
+                .await
+            && !artist_views.is_empty()
+        {
+            page += 1;
+            let iter: Vec<artist::ActiveModel> = artist_views
+                .into_iter()
+                .map(|view| view.artist.into_active_model())
+                .collect();
+
+            for chunk in iter.chunks(1000) {
+                log::debug!("Inserting {} album artists", chunk.len());
+                artist::Entity::insert_many(chunk.to_vec())
+                    .on_conflict(
+                        OnConflict::column(artist::Column::Id)
+                            .update_columns(<artist::Entity as EntityTrait>::Column::iter())
+                            .to_owned(),
+                    )
+                    .exec(db)
+                    .await
+                    .unwrap();
+            }
+        }
+
         // Albums
         let mut page = 0;
         while let Ok(album_views) = self
@@ -98,12 +136,30 @@ pub trait IndexableEndpoint: MusicEndpoint {
         {
             page += 1;
 
-            let iter: Vec<album::ActiveModel> = album_views
-                .into_iter()
-                .map(|view| view.album.into_active_model())
-                .collect();
+            let mut albums: Vec<album::ActiveModel> = vec![];
+            let mut related_artists: Vec<artist_albums::ActiveModel> = vec![];
+            for view in album_views.into_iter() {
+                // Create album_artists junctions
+                let artists: Vec<artist_albums::ActiveModel> = view
+                    .album_artists
+                    .into_iter()
+                    .map(|artist| {
+                        let album_id = view.album.id.clone();
+                        artist_albums::ActiveModel {
+                            artist_id: ActiveValue::Set(artist.id),
+                            album_id: ActiveValue::Set(album_id),
+                        }
+                    })
+                    .collect();
+                // As well as the album itself
+                let album = view.album.into_active_model();
 
-            for chunk in iter.chunks(1000) {
+                albums.push(album);
+                related_artists.extend(artists);
+            }
+
+            // Insert albums
+            for chunk in albums.chunks(1000) {
                 log::debug!("Inserting {} albums", chunk.len());
                 album::Entity::insert_many(chunk.to_vec())
                     .on_conflict(
@@ -114,6 +170,27 @@ pub trait IndexableEndpoint: MusicEndpoint {
                     .exec(db)
                     .await
                     .unwrap();
+            }
+
+            // At this point we already inserted all of the artists and the corresponding
+            // artist Now we can insert the junction
+            for chunk in related_artists.chunks(1000) {
+                log::debug!("Inserting {} album artists", chunk.len());
+                let insert = artist_albums::Entity::insert_many(chunk.to_vec()).on_conflict(
+                    OnConflict::columns([
+                        artist_albums::Column::ArtistId,
+                        artist_albums::Column::AlbumId,
+                    ])
+                    .update_columns(<artist_albums::Entity as EntityTrait>::Column::iter())
+                    .to_owned(),
+                ).on_conflict(OnConflict::constraint("FOREIGN KEY").TODO:);
+
+                log::debug!(
+                    "Statement: {}",
+                    insert.build(sea_orm::DatabaseBackend::Sqlite)
+                );
+
+                insert.exec(db).await.unwrap();
             }
         }
 
@@ -231,6 +308,7 @@ pub struct EndpointDB {
 }
 
 impl EndpointDB {
+    /// Opens an sqlite db at the default path
     pub async fn open() -> Result<Self> {
         log::debug!("Initializing EndpointDB");
         // Find the data dir
@@ -246,6 +324,7 @@ impl EndpointDB {
         Self::open_with_path(path).await
     }
 
+    /// Opens an sqlite db at the given db
     pub async fn open_with_path(path: PathBuf) -> Result<Self> {
         let path = path
             .into_string()
@@ -258,25 +337,42 @@ impl EndpointDB {
         // TODO: Naive check if database works
         db.ping().await?;
 
-        // Schema discovery is not Send + Sync so we spawn it in a local executor
-        let local = LocalSet::new();
-
-        {
-            let db = db.clone();
-            local.spawn_local(async move {
-                db.get_schema_registry(module_path!().split("::").next().unwrap())
-                    .sync(&db)
-                    .await;
-            });
-
-            /// FIXME: Test this
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                local.await
-            });
-        }
+        // Sync the schema
+        let tx = Self::start_schema_sync_worker(db.clone());
+        let (done_tx, done_rx) = oneshot::channel();
+        tx.send(done_tx).unwrap();
+        done_rx.await.unwrap()?;
 
         Ok(EndpointDB { db })
+    }
+
+    /// Schema discovery is not Send + Sync so we spawn it in another thread
+    fn start_schema_sync_worker(
+        db: DatabaseConnection,
+    ) -> mpsc::UnboundedSender<oneshot::Sender<Result<()>>> {
+        let (tx, mut rx) = mpsc::unbounded_channel::<oneshot::Sender<Result<()>>>();
+
+        std::thread::spawn(move || {
+            // SeaORM uses the tokio runtime (i didn't bother to check if we actually need
+            // both IO and time)
+            let rt = Builder::new_current_thread().enable_all().build().unwrap();
+
+            let local = LocalSet::new();
+
+            local.block_on(&rt, async move {
+                while let Some(done) = rx.recv().await {
+                    let result = db
+                        .get_schema_registry(module_path!().split("::").next().unwrap())
+                        .sync(&db)
+                        .await
+                        .map_err(Into::into);
+
+                    let _ = done.send(result);
+                }
+            });
+        });
+
+        tx
     }
 }
 
@@ -347,18 +443,7 @@ impl MusicEndpoint for EndpointDB {
         let select = select
             .find_also(track::Entity, artist::Entity) //  track -> artist
             .find_also(track::Entity, genre::Entity) //   track -> genre
-            .find_also(track::Entity, album::Entity) //   track -> album
-            .join(
-                //                                        album -> album_artist
-                JoinType::LeftJoin,
-                super::models::artist_albums::Relation::Album.def(),
-            )
-            .join_as(
-                //                                        album_artist -> artist (AlbumArtist)
-                JoinType::LeftJoin,
-                super::models::artist_albums::Relation::Artist.def(),
-                AlbumArtist,
-            );
+            .find_also(track::Entity, album::Entity); //  track -> album
 
         // Sorting
         let select = if let Some(sorting) = sorting {
@@ -446,6 +531,10 @@ impl MusicEndpoint for EndpointDB {
     /// Fetches all artists
     async fn get_artists(&self, params: GetArtistsParams) -> Result<Vec<ArtistView>> {
         todo!()
+    }
+
+    async fn get_album_artists(&self, params: GetArtistsParams) -> Result<Vec<ArtistView>> {
+        unimplemented!("The DB should not discerns album artists and normal artists")
     }
 
     /// Fetches all genres

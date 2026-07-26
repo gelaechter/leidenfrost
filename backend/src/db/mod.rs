@@ -1,2 +1,4 @@
-pub mod sqlite;
 pub mod models;
+pub mod sqlite;
+#[cfg(test)]
+pub mod test;

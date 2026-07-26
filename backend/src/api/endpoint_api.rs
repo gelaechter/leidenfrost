@@ -76,7 +76,11 @@ pub type Result<T> = result::Result<T, ApiError>;
 #[derive(Debug, Clone)]
 pub struct Capabilities {
     pub pagination: bool,
+    /// If this endpoint discerns album-artists and performing artists\
+    /// AFAIK this concerns only Jellyfin
+    pub split_artists: bool,
     pub image_sizing: bool,
+    /// If this endpoint can be indexed into the DB
     pub indexable: bool,
     // The Api supports sorting track views by the following
     pub track_sorting: HashSet<TrackSorting>,
@@ -92,6 +96,7 @@ pub static FULL_CAPABILITIES: LazyLock<Capabilities> = LazyLock::new(|| Capabili
     pagination: true,
     image_sizing: true,
     indexable: true,
+    split_artists: false,
     track_sorting: HashSet::from([
         TrackSorting::Album,
         TrackSorting::AlbumArtist,
@@ -135,42 +140,6 @@ pub static FULL_CAPABILITIES: LazyLock<Capabilities> = LazyLock::new(|| Capabili
         GenreSorting::Random,
     ]),
 });
-
-impl Capabilities {
-    /// Produces the intersection of two capabilities, thus
-    pub fn intersection(self, other: &Capabilities) -> Capabilities {
-        Capabilities {
-            pagination: self.pagination && other.pagination,
-            image_sizing: self.pagination && other.pagination,
-            indexable: self.indexable && other.indexable,
-            track_sorting: self
-                .track_sorting
-                .intersection(&other.track_sorting)
-                .copied()
-                .collect(),
-            album_sorting: self
-                .album_sorting
-                .intersection(&other.album_sorting)
-                .copied()
-                .collect(),
-            artist_sorting: self
-                .artist_sorting
-                .intersection(&other.artist_sorting)
-                .copied()
-                .collect(),
-            playlist_sorting: self
-                .playlist_sorting
-                .intersection(&other.playlist_sorting)
-                .copied()
-                .collect(),
-            genre_sorting: self
-                .genre_sorting
-                .intersection(&other.genre_sorting)
-                .copied()
-                .collect(),
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct Pagination {
@@ -325,6 +294,11 @@ pub trait MusicEndpoint {
 
     /// Fetches all artists
     async fn get_artists(&self, params: GetArtistsParams) -> Result<Vec<ArtistView>>;
+
+    /// Jellyfin specifically discerns artists and album artists, \
+    /// meaning fetching just artist will not necessarily fetch all artists. \
+    /// This fetches all album artists
+    async fn get_album_artists(&self, params: GetArtistsParams) -> Result<Vec<ArtistView>>;
 
     /// Fetches all genres
     async fn get_genres(&self, params: GetGenresParams) -> Result<Vec<GenreView>>;
