@@ -13,7 +13,7 @@ use std::{
     fmt::{self, Debug},
 };
 
-use iced::{Task, message::MaybeDebug};
+use iced::Task;
 
 // TODO: Do some thinking if this is not completely over-engineered
 /// This is an inter-component-message consisting of two variants:

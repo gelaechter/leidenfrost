@@ -195,21 +195,20 @@ impl JellyfinApi {
             }));
         }
 
-        let request = request_builder
+        let mut request = request_builder
             // See here for query parameters
             // https://typescript-sdk.jellyfin.org/interfaces/generated-client.ItemsApiGetItemsRequest.html
             .query(&json!({
                 "Recursive": true,
             }));
 
-        // For some reason jellyfins data specific endpoints (e.g. `/Artists`) don't
-        // play nice with IncludeItemTypes so we omit it in that case
-        let request = match item_kind {
-            BaseItemKind::MusicGenre | BaseItemKind::MusicArtist => request,
-            _ => request.query(&json!({
+        // For some reason Jellyfins data specific endpoints (e.g. `/Artists`) don't
+        // play nice with IncludeItemTypes so we use them only with the /Users/{user}/Items endpoint
+        if relative_path.starts_with("/Users") {
+            request = request.query(&json!({
                 "IncludeItemTypes": item_kind
-            })),
-        };
+            }))
+        }
 
         let response = request
             .query(additional_params)
@@ -429,7 +428,7 @@ impl MusicEndpoint for JellyfinApi {
 
         // https://typescript-sdk.jellyfin.org/interfaces/generated-client.GenresApiGetGenresRequest.html
         self.query_items(
-            "/Genres",
+            "/MusicGenres",
             BaseItemKind::MusicGenre,
             pagination,
             sorting,
@@ -525,15 +524,15 @@ impl MusicEndpoint for JellyfinApi {
     async fn get_playlist_tracks(
         &self,
         playlist_id: String,
-        params: GetPlaylistsParams,
+        params: GetTracksParams,
     ) -> endpoint_api::Result<Vec<TrackView>> {
-        let GetPlaylistsParams {
+        let GetTracksParams {
             pagination,
             sorting,
         } = params;
 
         self.query_items(
-            &format!("/Playlist/{playlist_id}/Items"),
+            &format!("/Playlists/{playlist_id}/Items"),
             BaseItemKind::Audio,
             pagination,
             sorting,

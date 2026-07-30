@@ -10,7 +10,7 @@ pub struct Model {
     pub id: String,
     pub endpoint_id: String,
     #[sea_orm(belongs_to, from = "endpoint_id", to = "id")]
-    pub endpoint: HasOne<super::endpoint::Entity>,
+    pub endpoint: BelongsTo<super::endpoint::Entity>,
     pub name: Option<String>,
     #[sea_orm(has_many, via = "artist_albums")]
     pub albums: HasMany<super::album::Entity>,

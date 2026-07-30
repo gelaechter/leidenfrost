@@ -8,7 +8,7 @@ pub struct Model {
     pub id: String,
     pub endpoint_id: String,
     #[sea_orm(belongs_to, from = "endpoint_id", to = "id")]
-    pub endpoint: HasOne<super::endpoint::Entity>,
+    pub endpoint: BelongsTo<super::endpoint::Entity>,
     pub name: Option<String>,
     pub image_url: Option<super::OrmUrl>,
     pub image_blur_hash: Option<String>,

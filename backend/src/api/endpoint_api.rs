@@ -313,7 +313,7 @@ pub trait MusicEndpoint {
     async fn get_playlist_tracks(
         &self,
         playlist_id: String,
-        params: GetPlaylistsParams,
+        params: GetTracksParams,
     ) -> Result<Vec<TrackView>>;
 
     /// Fetches songs containing a search term
@@ -373,12 +373,12 @@ pub struct EndpointManager {
 impl EndpointManager {
     /// Constructs a new `EndpointManager`
     async fn new() -> Result<Self> {
-        log::debug!("Initializing EndpointManager");
+        log::trace!("Initializing EndpointManager...");
         let endpoint_manager = Self {
             local_db: EndpointDB::open().await?,
             selected_endpoints: Vec::new(),
         };
-        log::debug!("Initialized EndpointManager!");
+        log::info!("Initialized EndpointManager");
         Ok(endpoint_manager)
     }
 
@@ -391,10 +391,10 @@ impl EndpointManager {
 
     /// Updates the endpoints currently available to the manager
     pub async fn update_endpoints(endpoints: Vec<EndpointKind>) -> Result<()> {
-        log::debug!("update_endpoints: trying to acquire manager lock!");
+        log::trace!("update_endpoints: trying to acquire manager lock...");
         let lock = Self::get_manager().await?;
         let mut manager = lock.write().await;
-        log::debug!("update_endpoints: got manager lock!");
+        log::trace!("update_endpoints: got manager lock");
 
         manager.selected_endpoints = endpoints;
         Ok(())
@@ -403,10 +403,10 @@ impl EndpointManager {
     /// Will either return the active endpoint if [`Self::selected_endpoints`]
     /// as a single entry or return the LocalIndex
     pub async fn get_active_endpoint() -> Result<Arc<dyn MusicEndpoint + Send + Sync>> {
-        log::debug!("get_active_endpoint: trying to acquire manager lock!");
+        log::trace!("get_active_endpoint: trying to acquire manager lock...");
         let lock = Self::get_manager().await?;
         let manager = lock.read().await;
-        log::debug!("get_active_endpoint: got manager lock!");
+        log::trace!("get_active_endpoint: got manager lock");
 
         // Both are cheap to clone ([`Arc`] and [`DatabaseConnection`] respectively)
         // FIXME: Remove false
@@ -421,10 +421,10 @@ impl EndpointManager {
 
     /// Index all the endpoints which are currently set to index
     pub async fn index_all_endpoints() -> Result<()> {
-        log::debug!("index_all_endpoints: trying to acquire manager lock!");
+        log::trace!("index_all_endpoints: trying to acquire manager lock...");
         let lock = Self::get_manager().await?;
         let manager = lock.read().await;
-        log::debug!("index_all_endpoints: got manager lock!");
+        log::trace!("index_all_endpoints: got manager lock");
 
         for indexable_endpoint in manager.selected_endpoints.iter().filter_map(|e| match e {
             // Only index indexable endpoints which have indexing activated

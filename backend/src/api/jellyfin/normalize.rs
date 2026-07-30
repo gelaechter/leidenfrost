@@ -88,7 +88,7 @@ impl Normalize<BaseItemDto, TrackView> for JellyfinApi {
         // BaseItemKind this is fine
         assert!(
             matches!(type_, Some(BaseItemKind::Audio)),
-            "Tried to normalize a non BaseItemKind::Audio as a Track"
+            "Tried to normalize a {type_:?} as a Track"
         );
 
         let track = Track {
@@ -201,7 +201,7 @@ impl Normalize<BaseItemDto, PlaylistView> for JellyfinApi {
         // BaseItemKind this is fine
         assert!(
             matches!(type_, Some(BaseItemKind::Playlist)),
-            "Tried to normalize a non BaseItemKind::Playlist as a Playlist"
+            "Tried to normalize a {type_:?} as a Playlist"
         );
 
         let playlist = Playlist {
@@ -266,7 +266,7 @@ impl Normalize<BaseItemDto, AlbumView> for JellyfinApi {
         // BaseItemKind this is fine
         assert!(
             matches!(type_, Some(BaseItemKind::MusicAlbum)),
-            "Tried to normalize a non BaseItemKind::MusicAlbum as an Album"
+            "Tried to normalize a {type_:?} as an Album"
         );
 
         let album = Album {
@@ -335,7 +335,7 @@ impl Normalize<BaseItemDto, GenreView> for JellyfinApi {
         // BaseItemKind this is fine
         assert!(
             matches!(type_, Some(BaseItemKind::MusicGenre)),
-            "Tried to normalize a non BaseItemKind::MusicGenre as a Genre"
+            "Tried to normalize a {type_:?} as a Genre"
         );
 
         let genre = Genre {
@@ -398,7 +398,7 @@ impl Normalize<BaseItemDto, ArtistView> for JellyfinApi {
         // BaseItemKind this is fine
         assert!(
             matches!(type_, Some(BaseItemKind::MusicArtist)),
-            "Tried to normalize a non BaseItemKind::MusicArtist as an Artist"
+            "Tried to normalize a {type_:?} as an Artist"
         );
 
         let BaseItemDtoImageBlurHashes {

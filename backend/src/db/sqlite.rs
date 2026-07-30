@@ -1,10 +1,15 @@
-use std::path::PathBuf;
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveValue, ColumnTrait, Database, DatabaseConnection, DeriveIden, EntityTrait,
-    IntoActiveModel, Iterable, ModelTrait, QueryOrder, QuerySelect, QueryTrait,
-    sea_query::{Expr, OnConflict},
+    ActiveValue, ColumnTrait, Database, DatabaseBackend, DatabaseConnection, DeriveIden,
+    EntityTrait, IntoActiveModel, Iterable, ModelTrait, QueryFilter, QueryOrder, QuerySelect,
+    QueryTrait,
+    sea_query::{Expr, OnConflict, value::prelude::rust_decimal::prelude::ToPrimitive},
+    sqlx::types::Decimal,
 };
 use tokio::{
     runtime::Builder,
@@ -15,14 +20,14 @@ use tokio::{
 use crate::{
     api::{
         endpoint_api::{
-            ArtistAlbums, Capabilities, GetAlbumsParams, GetArtistsParams, GetGenresParams,
-            GetPlaylistsParams, GetTracksParams, MusicEndpoint, Pagination, SearchParams,
-            SearchResult, SortOrder, TrackSorting,
+            AlbumSorting, ArtistAlbums, Capabilities, GetAlbumsParams, GetArtistsParams,
+            GetGenresParams, GetPlaylistsParams, GetTracksParams, MusicEndpoint, Pagination,
+            SearchParams, SearchResult, SortOrder, TrackSorting,
         },
         jellyfin::errors::ApiError,
     },
     data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView},
-    db::models::{artist_albums, endpoint, playlist},
+    db::models::{artist_albums, artist_tracks, endpoint, playlist, playlist_tracks, track_genres},
 };
 
 use super::models::{album, artist, genre, track};
@@ -108,7 +113,7 @@ pub trait IndexableEndpoint: MusicEndpoint {
                 .collect();
 
             for chunk in iter.chunks(1000) {
-                log::debug!("Inserting {} album artists", chunk.len());
+                log::debug!("Inserting {} album-artists", chunk.len());
                 artist::Entity::insert_many(chunk.to_vec())
                     .on_conflict(
                         OnConflict::column(artist::Column::Id)
@@ -175,56 +180,43 @@ pub trait IndexableEndpoint: MusicEndpoint {
             // At this point we already inserted all of the artists and the corresponding
             // artist Now we can insert the junction
             for chunk in related_artists.chunks(1000) {
-                log::debug!("Inserting {} album artists", chunk.len());
-                let insert = artist_albums::Entity::insert_many(chunk.to_vec()).on_conflict(
-                    OnConflict::columns([
-                        artist_albums::Column::ArtistId,
-                        artist_albums::Column::AlbumId,
-                    ])
-                    .update_columns(<artist_albums::Entity as EntityTrait>::Column::iter())
-                    .to_owned(),
-                ).on_conflict(OnConflict::constraint("FOREIGN KEY").TODO:);
+                // 1. Extract artist IDs from the chunk safely
+                // (take() returns Some(val) if Set, None if Unset)
+                let artist_ids_in_chunk: Vec<String> = chunk
+                    .iter()
+                    .filter_map(|m| m.artist_id.clone().take())
+                    .collect();
+
+                // 2. Find which ones actually exist in the database
+                let valid_artist_ids: HashSet<String> = artist::Entity::find()
+                    .filter(artist::Column::Id.is_in(artist_ids_in_chunk))
+                    .all(db)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|a| a.id)
+                    .collect();
+
+                // 3. Filter the chunk to ONLY include rows with valid artists
+                let valid_chunk: Vec<artist_albums::ActiveModel> = chunk
+                    .iter()
+                    .filter(|m| {
+                        m.artist_id
+                            .clone()
+                            .take()
+                            .is_some_and(|id| valid_artist_ids.contains(&id))
+                    })
+                    .cloned() // chunk yields references (&ActiveModel), so we clone to own them
+                    .collect();
 
                 log::debug!(
-                    "Statement: {}",
-                    insert.build(sea_orm::DatabaseBackend::Sqlite)
+                    "Inserting {} valid album-artist relations (skipping {} due to missing FK)",
+                    valid_chunk.len(),
+                    chunk.len() - valid_chunk.len()
                 );
-
-                insert.exec(db).await.unwrap();
-            }
-        }
-
-        // Tracks
-        let mut page = 0;
-        while let Ok(track_views) = self
-            .get_tracks(GetTracksParams {
-                pagination: self.capabilities().pagination.then_some(Pagination {
-                    start_page: page,
-                    limit: 100,
-                }),
-                sorting: None,
-            })
-            .await
-            && !track_views.is_empty()
-        {
-            page += 1;
-
-            let tracks: Vec<track::ActiveModel> = track_views
-                .into_iter()
-                .map(|view| view.track.into_active_model())
-                .collect();
-
-            for chunk in tracks.chunks(1000) {
-                log::debug!("Inserting {} tracks", chunk.len());
-                track::Entity::insert_many(chunk.to_vec())
-                    .on_conflict(
-                        OnConflict::column(track::Column::Id)
-                            .update_columns(<track::Entity as EntityTrait>::Column::iter())
-                            .to_owned(),
-                    )
-                    .exec(db)
-                    .await
-                    .unwrap();
+                let insert =
+                    artist_albums::Entity::insert_many(valid_chunk).on_conflict_do_nothing();
+                insert.exec_without_returning(db).await.unwrap();
             }
         }
 
@@ -262,6 +254,158 @@ pub trait IndexableEndpoint: MusicEndpoint {
             }
         }
 
+        // Tracks
+        let mut page = 0;
+        while let Ok(track_views) = self
+            .get_tracks(GetTracksParams {
+                pagination: self.capabilities().pagination.then_some(Pagination {
+                    start_page: page,
+                    limit: 100,
+                }),
+                sorting: None,
+            })
+            .await
+            && !track_views.is_empty()
+        {
+            page += 1;
+
+            let mut tracks: Vec<track::ActiveModel> = vec![];
+            let mut related_genres: Vec<track_genres::ActiveModel> = vec![];
+            let mut related_artists: Vec<artist_tracks::ActiveModel> = vec![];
+            for view in track_views.into_iter() {
+                // Create album_artists junctions
+                let genres: Vec<track_genres::ActiveModel> = view
+                    .genres
+                    .into_iter()
+                    .map(|genre| {
+                        let track_id = view.track.id.clone();
+                        track_genres::ActiveModel {
+                            track_id: ActiveValue::Set(track_id),
+                            genre_id: ActiveValue::Set(genre.id),
+                        }
+                    })
+                    .collect();
+
+                // Create artist_tracks junctions
+                let artists: Vec<artist_tracks::ActiveModel> = view
+                    .artists
+                    .into_iter()
+                    .map(|artist| {
+                        let track_id = view.track.id.clone();
+                        artist_tracks::ActiveModel {
+                            track_id: ActiveValue::Set(track_id),
+                            artist_id: ActiveValue::Set(artist.id),
+                        }
+                    })
+                    .collect();
+
+                // As well as the album itself
+                let track = view.track.into_active_model();
+
+                tracks.push(track);
+                related_genres.extend(genres);
+                related_artists.extend(artists);
+            }
+
+            // Insert track
+            for chunk in tracks.chunks(1000) {
+                log::debug!("Inserting {} tracks", chunk.len());
+                track::Entity::insert_many(chunk.to_vec())
+                    .on_conflict(
+                        OnConflict::column(track::Column::Id)
+                            .update_columns(<track::Entity as EntityTrait>::Column::iter())
+                            .to_owned(),
+                    )
+                    .exec(db)
+                    .await
+                    .unwrap();
+            }
+
+            // At this point we already inserted all of the genres and the corresponding
+            // tracks; Now we can insert the junction
+            for chunk in related_genres.chunks(1000) {
+                // 1. Extract artist IDs from the chunk safely
+                // (take() returns Some(val) if Set, None if Unset)
+                let genre_ids_in_chunk: Vec<String> = chunk
+                    .iter()
+                    .filter_map(|m| m.genre_id.clone().take())
+                    .collect();
+
+                // 2. Find which ones actually exist in the database
+                let valid_genre_ids: HashSet<String> = genre::Entity::find()
+                    .filter(genre::Column::Id.is_in(genre_ids_in_chunk))
+                    .all(db)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|a| a.id)
+                    .collect();
+
+                // 3. Filter the chunk to ONLY include rows with valid artists
+                let valid_chunk: Vec<track_genres::ActiveModel> = chunk
+                    .iter()
+                    .filter(|m| {
+                        m.genre_id
+                            .clone()
+                            .take()
+                            .is_some_and(|id| valid_genre_ids.contains(&id))
+                    })
+                    .cloned() // chunk yields references (&ActiveModel), so we clone to own them
+                    .collect();
+
+                log::debug!(
+                    "Inserting {} valid track-genre relations (skipping {} due to missing FK)",
+                    valid_chunk.len(),
+                    chunk.len() - valid_chunk.len()
+                );
+                let insert =
+                    track_genres::Entity::insert_many(valid_chunk).on_conflict_do_nothing();
+                insert.exec_without_returning(db).await.unwrap();
+            }
+
+            // At this point we already inserted all of the genres and the corresponding
+            // tracks; Now we can insert the junction
+            for chunk in related_artists.chunks(1000) {
+                // 1. Extract artist IDs from the chunk safely
+                // (take() returns Some(val) if Set, None if Unset)
+                let artist_ids_in_chunk: Vec<String> = chunk
+                    .iter()
+                    .filter_map(|m| m.artist_id.clone().take())
+                    .collect();
+
+                // 2. Find which ones actually exist in the database
+                let valid_artist_ids: HashSet<String> = artist::Entity::find()
+                    .filter(artist::Column::Id.is_in(artist_ids_in_chunk))
+                    .all(db)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|a| a.id)
+                    .collect();
+
+                // 3. Filter the chunk to ONLY include rows with valid artists
+                let valid_chunk: Vec<artist_tracks::ActiveModel> = chunk
+                    .iter()
+                    .filter(|m| {
+                        m.artist_id
+                            .clone()
+                            .take()
+                            .is_some_and(|id| valid_artist_ids.contains(&id))
+                    })
+                    .cloned() // chunk yields references (&ActiveModel), so we clone to own them
+                    .collect();
+
+                log::debug!(
+                    "Inserting {} valid track-artist relations (skipping {} due to missing FK)",
+                    valid_chunk.len(),
+                    chunk.len() - valid_chunk.len()
+                );
+                let insert =
+                    artist_tracks::Entity::insert_many(valid_chunk).on_conflict_do_nothing();
+                insert.exec_without_returning(db).await.unwrap();
+            }
+        }
+
         // Playlist
         let mut page = 0;
         while let Ok(playlist_views) = self
@@ -277,12 +421,49 @@ pub trait IndexableEndpoint: MusicEndpoint {
         {
             page += 1;
 
-            let iter: Vec<playlist::ActiveModel> = playlist_views
-                .into_iter()
-                .map(|view| view.playlist.into_active_model())
-                .collect();
+            let mut playlists: Vec<playlist::ActiveModel> = vec![];
+            let mut related_tracks: Vec<playlist_tracks::ActiveModel> = vec![];
+            for view in playlist_views.into_iter() {
+                // Create playlist-track junctions by requesting all the playlists tracks
+                let mut tracks_page = 0;
+                while let Ok(track_views) = self
+                    .get_playlist_tracks(
+                        view.playlist.id.clone(),
+                        GetTracksParams {
+                            pagination: self.capabilities().pagination.then_some(Pagination {
+                                start_page: tracks_page,
+                                limit: 100,
+                            }),
+                            sorting: None,
+                        },
+                    )
+                    .await
+                    && !track_views.is_empty()
+                {
+                    tracks_page += 1;
 
-            for chunk in iter.chunks(1000) {
+                    let tracks: Vec<playlist_tracks::ActiveModel> = track_views
+                        .into_iter()
+                        .map(|tv| {
+                            let playlist_id = view.playlist.id.clone();
+                            playlist_tracks::ActiveModel {
+                                track_id: ActiveValue::Set(tv.track.id),
+                                playlist_id: ActiveValue::Set(playlist_id),
+                            }
+                        })
+                        .collect();
+
+                    related_tracks.extend(tracks);
+                }
+
+                // As well as the album itself
+                let playlist = view.playlist.into_active_model();
+
+                playlists.push(playlist);
+            }
+
+            // Insert playlists
+            for chunk in playlists.chunks(1000) {
                 log::debug!("Inserting {} playlists", chunk.len());
                 playlist::Entity::insert_many(chunk.to_vec())
                     .on_conflict(
@@ -293,6 +474,48 @@ pub trait IndexableEndpoint: MusicEndpoint {
                     .exec(db)
                     .await
                     .unwrap();
+            }
+
+            // At this point we already inserted all of the playlist and the corresponding
+            // tracks; Now we can insert the junction
+            for chunk in related_tracks.chunks(1000) {
+                // 1. Extract artist IDs from the chunk safely
+                // (take() returns Some(val) if Set, None if Unset)
+                let track_ids_in_chunk: Vec<String> = chunk
+                    .iter()
+                    .filter_map(|m| m.track_id.clone().take())
+                    .collect();
+
+                // 2. Find which ones actually exist in the database
+                let valid_track_ids: HashSet<String> = track::Entity::find()
+                    .filter(track::COLUMN.id.is_in(track_ids_in_chunk))
+                    .all(db)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|a| a.id)
+                    .collect();
+
+                // 3. Filter the chunk to ONLY include rows with valid artists
+                let valid_chunk: Vec<playlist_tracks::ActiveModel> = chunk
+                    .iter()
+                    .filter(|m| {
+                        m.track_id
+                            .clone()
+                            .take()
+                            .is_some_and(|id| valid_track_ids.contains(&id))
+                    })
+                    .cloned() // chunk yields references (&ActiveModel), so we clone to own them
+                    .collect();
+
+                log::debug!(
+                    "Inserting {} valid playlist-track relations (skipping {} due to missing FK)",
+                    valid_chunk.len(),
+                    chunk.len() - valid_chunk.len()
+                );
+                let insert =
+                    playlist_tracks::Entity::insert_many(valid_chunk).on_conflict_do_nothing();
+                insert.exec_without_returning(db).await.unwrap();
             }
         }
     }
@@ -497,7 +720,42 @@ impl MusicEndpoint for EndpointDB {
 
     /// Fetches a specific album
     async fn get_album(&self, album_id: String) -> Result<AlbumView> {
-        todo!()
+        let album = album::Entity::find_by_id(album_id)
+            .one(&self.db)
+            .await?
+            .ok_or(ApiError::DataNotFound)?;
+
+        let album_artists = album
+            .find_related(artist::Entity)
+            .all(&self.db)
+            .await?
+            .into_iter() // Convert into RelatedArtists
+            .map(Into::into)
+            .collect();
+
+        let genres = album
+            .find_linked(album::AlbumToGenres)
+            .all(&self.db)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect();
+
+        let duration: i64 = album
+            .find_related(track::Entity)
+            .select_only()
+            .column_as(track::COLUMN.duration.sum(), "sum")
+            .into_tuple()
+            .one(&self.db)
+            .await?
+            .unwrap();
+
+        Ok(AlbumView {
+            album,
+            album_artists,
+            genres,
+            duration: Some(duration),
+        })
     }
 
     /// Fetches all songs from an album
@@ -506,12 +764,158 @@ impl MusicEndpoint for EndpointDB {
         album_id: String,
         params: GetTracksParams,
     ) -> Result<Vec<TrackView>> {
-        todo!()
+        let GetTracksParams {
+            pagination,
+            sorting,
+        } = params;
+
+        let album = album::Entity::find_by_id(album_id)
+            .one(&self.db)
+            .await?
+            .ok_or(ApiError::DataNotFound)?;
+
+        let select = album.find_related(track::Entity);
+
+        // Pagination
+        let select = if let Some(Pagination { limit, start_page }) = pagination {
+            select.limit(limit).offset(start_page)
+        } else {
+            select
+        };
+
+        // table name
+        #[derive(DeriveIden, Clone, Copy)]
+        struct AlbumArtist;
+
+        let select = select
+            .find_also(track::Entity, artist::Entity) //  track -> artist
+            .find_also(track::Entity, genre::Entity); //   track -> genre
+
+        // Sorting
+        let select = if let Some(sorting) = sorting {
+            let criteria = match sorting.by {
+                TrackSorting::Album => album::COLUMN.title.0.into_expr(),
+                TrackSorting::AlbumArtist => Expr::col((AlbumArtist, artist::Column::Name)),
+                TrackSorting::Title => track::COLUMN.title.0.into_expr(),
+                TrackSorting::Artist => artist::COLUMN.name.0.into_expr(),
+                TrackSorting::Duration => track::COLUMN.duration.0.into_expr(),
+                TrackSorting::PlayCount => track::COLUMN.play_count.0.into_expr(),
+                TrackSorting::Random => Expr::cust("RANDOM()"),
+                TrackSorting::DateAdded => {
+                    return Err(ApiError::Unsupported {
+                        call: "TrackSorting::DateAdded".to_owned(),
+                        endpoint: "Database".to_owned(),
+                    });
+                }
+                TrackSorting::DatePlayed => track::COLUMN.last_played_at.0.into_expr(),
+                TrackSorting::DateReleased => track::COLUMN.release_date.0.into_expr(),
+            };
+
+            match sorting.order {
+                SortOrder::Ascending => select.order_by_asc(criteria),
+                SortOrder::Descending => select.order_by_desc(criteria),
+            }
+        } else {
+            select
+        };
+
+        // Consolidate
+        let tracks: Vec<(track::Model, Vec<artist::Model>, Vec<genre::Model>)> =
+            select.consolidate().all(&self.db).await?;
+
+        // Put into a TrackView
+        let tracks = tracks
+            .into_iter()
+            .map(|(track, artists, genres)| TrackView {
+                track,
+                artists: artists.into_iter().map(Into::into).collect(),
+                album_name: album.title.clone(),
+                genres: genres.into_iter().map(Into::into).collect(),
+            })
+            .collect();
+
+        Ok(tracks)
     }
 
     /// Fetches all albums
     async fn get_albums(&self, params: GetAlbumsParams) -> Result<Vec<AlbumView>> {
-        todo!()
+        let GetAlbumsParams {
+            pagination,
+            sorting,
+        } = params;
+
+        let select = album::Entity::find();
+
+        // Pagination
+        let paginated_select = if let Some(Pagination { limit, start_page }) = pagination {
+            select.limit(limit).offset(start_page)
+        } else {
+            select
+        };
+
+        let select = paginated_select
+            .find_also_linked(album::AlbumToGenres)
+            .find_also(album::Entity, artist::Entity)
+            .group_by(album::Column::Id);
+
+        // Sorting
+        let select = if let Some(sorting) = sorting {
+            let criteria = match sorting.by {
+                AlbumSorting::Name => album::COLUMN.title.0.into_expr(),
+                AlbumSorting::AlbumArtist => artist::COLUMN.name.0.into_expr(),
+                AlbumSorting::Duration => {
+                    // Subquery for duration sort
+                    Expr::cust(
+                        "SELECT COALESCE(SUM(track.duration), 0) FROM track WHERE track.album_id = album.id",
+                    )
+                }
+                AlbumSorting::Random => Expr::cust("RANDOM()"),
+                AlbumSorting::DateAdded => {
+                    return Err(ApiError::Unsupported {
+                        call: "AlbumSorting::DateAdded".to_owned(),
+                        endpoint: "Database".to_owned(),
+                    });
+                }
+                AlbumSorting::DateReleased => track::COLUMN.release_date.0.into_expr(),
+                AlbumSorting::TrackCount => todo!(),
+            };
+
+            match sorting.order {
+                SortOrder::Ascending => select.order_by_asc(criteria),
+                SortOrder::Descending => select.order_by_desc(criteria),
+            }
+        } else {
+            select
+        };
+
+        // Consolidate
+        let albums = select.consolidate().all(&self.db).await?;
+
+        // Additionally find the duration for every album
+        let duration_map: HashMap<String, i64> = track::Entity::find()
+            .select_only()
+            .column(track::Column::AlbumId)
+            .column_as(track::Column::Duration.sum(), "total_duration")
+            .filter(track::Column::AlbumId.is_in(albums.iter().map(|a| &a.0.id)))
+            .group_by(track::Column::AlbumId)
+            .into_tuple::<(String, i64)>()
+            .all(&self.db)
+            .await?
+            .into_iter()
+            .collect();
+
+        // Put into a AlbumView
+        let albums = albums
+            .into_iter()
+            .map(|(album, genres, artists)| AlbumView {
+                duration: duration_map.get(&album.id).copied(),
+                album_artists: artists.into_iter().map(Into::into).collect(),
+                genres: genres.into_iter().map(Into::into).collect(),
+                album,
+            })
+            .collect();
+
+        Ok(albums)
     }
 
     /// Fetches albums from an artist
@@ -557,7 +961,7 @@ impl MusicEndpoint for EndpointDB {
     async fn get_playlist_tracks(
         &self,
         playlist_id: String,
-        params: GetPlaylistsParams,
+        params: GetTracksParams,
     ) -> Result<Vec<TrackView>> {
         todo!()
     }
