@@ -8,6 +8,8 @@ use async_trait::async_trait;
 use reqwest::RequestBuilder;
 use sea_orm::DeriveDisplay;
 use serde::{Deserialize, Serialize};
+use strum::EnumIter;
+use strum::IntoEnumIterator;
 use tokio::sync::{OnceCell, RwLock};
 use url::Url;
 
@@ -59,17 +61,6 @@ pub enum SearchResult {
     },
 }
 
-/// Differentiating between "appears on"- and "created by"-albums can
-/// technically be done through checking if the artist is part of the albums
-/// album-artists list but doing it this way is nicer IMO
-#[derive(Debug, Clone)]
-pub struct ArtistAlbums {
-    /// Albums an artist has a track on
-    pub appears_on: Vec<AlbumView>,
-    /// Albums where the artist is credited as album artist
-    pub created: Vec<AlbumView>,
-}
-
 pub type Result<T> = result::Result<T, ApiError>;
 
 /// What is the API capable of
@@ -90,55 +81,16 @@ pub struct Capabilities {
     pub genre_sorting: HashSet<GenreSorting>,
 }
 
-// TODO: This will quickly cause issues if not in sync with the sorting enums
-// Consider stealing VariantArray from strum
 pub static FULL_CAPABILITIES: LazyLock<Capabilities> = LazyLock::new(|| Capabilities {
     pagination: true,
     image_sizing: true,
     indexable: true,
     split_artists: false,
-    track_sorting: HashSet::from([
-        TrackSorting::Album,
-        TrackSorting::AlbumArtist,
-        TrackSorting::Title,
-        TrackSorting::Artist,
-        TrackSorting::Duration,
-        TrackSorting::PlayCount,
-        TrackSorting::Random,
-        TrackSorting::DateAdded,
-        TrackSorting::DatePlayed,
-        TrackSorting::DateReleased,
-    ]),
-    album_sorting: HashSet::from([
-        AlbumSorting::Name,
-        AlbumSorting::AlbumArtist,
-        AlbumSorting::TrackCount,
-        AlbumSorting::Duration,
-        AlbumSorting::DateAdded,
-        AlbumSorting::DateReleased,
-        AlbumSorting::Random,
-    ]),
-    artist_sorting: HashSet::from([
-        ArtistSorting::Name,
-        ArtistSorting::AlbumCount,
-        ArtistSorting::TrackCount,
-        ArtistSorting::Duration,
-        ArtistSorting::Random,
-    ]),
-    playlist_sorting: HashSet::from([
-        PlaylistSorting::Name,
-        PlaylistSorting::AlbumCount,
-        PlaylistSorting::TrackCount,
-        PlaylistSorting::Duration,
-        PlaylistSorting::Random,
-    ]),
-    genre_sorting: HashSet::from([
-        GenreSorting::Name,
-        GenreSorting::AlbumCount,
-        GenreSorting::TrackCount,
-        GenreSorting::Duration,
-        GenreSorting::Random,
-    ]),
+    track_sorting: TrackSorting::iter().collect(),
+    album_sorting: AlbumSorting::iter().collect(),
+    artist_sorting: ArtistSorting::iter().collect(),
+    playlist_sorting: PlaylistSorting::iter().collect(),
+    genre_sorting: GenreSorting::iter().collect(),
 });
 
 #[derive(Debug, Clone)]
@@ -165,7 +117,7 @@ pub enum SortOrder {
     Descending,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, EnumIter)]
 pub enum TrackSorting {
     Album,
     AlbumArtist,
@@ -180,7 +132,7 @@ pub enum TrackSorting {
     DateReleased,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, EnumIter)]
 pub enum AlbumSorting {
     #[default]
     Name,
@@ -192,7 +144,7 @@ pub enum AlbumSorting {
     Random,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, EnumIter)]
 pub enum ArtistSorting {
     #[default]
     Name,
@@ -202,7 +154,7 @@ pub enum ArtistSorting {
     Random,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, EnumIter)]
 pub enum GenreSorting {
     #[default]
     Name,
@@ -212,7 +164,7 @@ pub enum GenreSorting {
     Random,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, EnumIter)]
 pub enum PlaylistSorting {
     #[default]
     Name,
@@ -287,7 +239,7 @@ pub trait MusicEndpoint {
         &self,
         artist_id: String,
         params: GetAlbumsParams,
-    ) -> Result<ArtistAlbums>;
+    ) -> Result<Vec<AlbumView>>;
 
     /// Fetches an artist
     async fn get_artist(&self, artist_id: String) -> Result<ArtistView>;

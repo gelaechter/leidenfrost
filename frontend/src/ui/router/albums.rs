@@ -131,7 +131,7 @@ pub struct AlbumRow {
 
 static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
-/// Convenience since we mostly want to display [`TrackView`]s
+/// Convenience since we mostly want to display [`AlbumView`]s
 impl From<AlbumView> for AlbumRow {
     /// This conversion is blocking since we decode the blurhashes
     /// beforehand; Treat it as such
@@ -143,6 +143,7 @@ impl From<AlbumView> for AlbumRow {
                 .blurhash_maybe(blurhash)
                 .pre_decode_blurhash(64, 64)
                 .debounce(Duration::from_millis(500))
+                .border_radius(8)
         });
 
         AlbumRow {

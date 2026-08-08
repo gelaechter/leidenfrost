@@ -18,6 +18,7 @@ directories = "6.0.0"
 libmpv2 = "6.0.0"
 env_logger = "0.11.11"
 serde_json = { package = "serde_json_path_to_error", version = "0.1.5" }
+strum = { version = "0.28", features = ["derive"] }
 
 tokio = { workspace = true, features = ["macros"] }
 tokio-stream.workspace = true
@@ -32,7 +33,7 @@ log.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-test_case = "3.3.1"
+rstest = "0.26.1"
 
 [features]
 default = []

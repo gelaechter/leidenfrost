@@ -3,10 +3,10 @@ use std::{collections::HashSet, sync::LazyLock};
 use crate::{
     api::{
         endpoint_api::{
-            self, AlbumSorting, ArtistAlbums, ArtistSorting, Capabilities, GenreSorting,
-            GetAlbumsParams, GetArtistsParams, GetGenresParams, GetPlaylistsParams,
-            GetTracksParams, MusicEndpoint, Pagination, PlaylistSorting, SearchParams,
-            SearchResult, Sort, TrackSorting, UserPasswordAuth,
+            self, AlbumSorting, ArtistSorting, Capabilities, GenreSorting, GetAlbumsParams,
+            GetArtistsParams, GetGenresParams, GetPlaylistsParams, GetTracksParams, MusicEndpoint,
+            Pagination, PlaylistSorting, SearchParams, SearchResult, Sort, TrackSorting,
+            UserPasswordAuth,
         },
         jellyfin::{
             data::{BaseItemDto, BaseItemDtoQueryResult, BaseItemKind, ItemSortBy},
@@ -203,7 +203,8 @@ impl JellyfinApi {
             }));
 
         // For some reason Jellyfins data specific endpoints (e.g. `/Artists`) don't
-        // play nice with IncludeItemTypes so we use them only with the /Users/{user}/Items endpoint
+        // play nice with IncludeItemTypes so we use them only with the
+        // /Users/{user}/Items endpoint
         if relative_path.starts_with("/Users") {
             request = request.query(&json!({
                 "IncludeItemTypes": item_kind
@@ -333,7 +334,7 @@ impl MusicEndpoint for JellyfinApi {
         &self,
         artist_id: String,
         params: GetAlbumsParams,
-    ) -> Result<ArtistAlbums> {
+    ) -> Result<Vec<AlbumView>> {
         log::debug!("get_artist_albums: {artist_id:?} {params:?}");
 
         let user_id = &self.user_id;
@@ -342,34 +343,14 @@ impl MusicEndpoint for JellyfinApi {
             sorting,
         } = params;
 
-        let appears_on = self
-            .query_items(
-                &format!("/Users/{user_id}/Items"),
-                BaseItemKind::MusicAlbum,
-                pagination.clone(),
-                sorting.clone(),
-                &json!({
-                    "ContributingArtistIds": artist_id,
-                }),
-            )
-            .await?;
-
-        let created = self
-            .query_items(
-                &format!("/Users/{user_id}/Items"),
-                BaseItemKind::MusicAlbum,
-                pagination,
-                sorting,
-                &json!({
-                    "AlbumArtistIds": artist_id,
-                }),
-            )
-            .await?;
-
-        Ok(ArtistAlbums {
-            appears_on,
-            created,
-        })
+        self.query_items(
+            &format!("/Users/{user_id}/Items"),
+            BaseItemKind::MusicAlbum,
+            pagination.clone(),
+            sorting.clone(),
+            &Value::Null
+        )
+        .await
     }
 
     async fn get_artist(&self, artist_id: String) -> Result<ArtistView> {
@@ -459,7 +440,7 @@ impl MusicEndpoint for JellyfinApi {
         )
         .await
     }
-    
+
     fn capabilities(&self) -> endpoint_api::Capabilities {
         Capabilities {
             pagination: true,

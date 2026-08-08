@@ -26,12 +26,12 @@ pub struct Model {
     #[sea_orm(belongs_to, from = "endpoint_id", to = "id")]
     pub endpoint: BelongsTo<super::endpoint::Entity>,
     /// The album this track belongs to
-    pub album_id: String,
+    pub album_id: Option<String>,
     /// The disc this track belongs to
     pub disc_number: i64,
     /// The album this track belongs to
     #[sea_orm(belongs_to, from = "album_id", to = "id")]
-    pub album: BelongsTo<super::album::Entity>,
+    pub album: BelongsTo<Option<super::album::Entity>>,
     /// The artists who made this song
     #[sea_orm(has_many, via = "artist_tracks")]
     pub artists: HasMany<super::artist::Entity>,

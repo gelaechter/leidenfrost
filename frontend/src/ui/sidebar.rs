@@ -15,7 +15,7 @@ use iced::{
 };
 
 use backend::{
-    api::endpoint_api::{EndpointManager, GetPlaylistsParams, MusicEndpoint},
+    api::endpoint_api::{EndpointManager, GetPlaylistsParams},
     data_view::PlaylistView,
 };
 
@@ -97,7 +97,6 @@ impl Sidebar {
 
                     Task::perform(
                         async {
-                            // TODO: Replace with global state
                             let endpoint = EndpointManager::get_active_endpoint().await.unwrap();
 
                             endpoint

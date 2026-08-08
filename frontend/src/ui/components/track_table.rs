@@ -138,22 +138,29 @@ pub fn album_column() -> Column<TrackRow, TrackCellMsg> {
     Column::new(
         || column_header("Album").into(),
         |row: &TrackRow| {
-            // Display the album name as clickable link that takes you there
-            let album_name = row
-                .view
-                .album_name
-                .clone()
-                .unwrap_or("Unknown album".to_owned());
+            let album_id = row.view.track.album_id.clone();
+            if let Some(album_id) = album_id {
+                // Display the album name as clickable link that takes you there
+                let album_name = row
+                    .view
+                    .album_name
+                    .clone()
+                    .unwrap_or("Unknown album".to_owned());
 
-            album_name
-                .link(
-                    Route::Album(row.view.track.album_id.clone()),
-                    TrackCellMsg::ChangeRoute,
-                )
-                .style(muted_text)
-                .wrapping(Wrapping::None)
-                .ellipsis(text::Ellipsis::End)
-                .into()
+                album_name
+                    .link(Route::Album(album_id), TrackCellMsg::ChangeRoute)
+                    .style(muted_text)
+                    .wrapping(Wrapping::None)
+                    .ellipsis(text::Ellipsis::End)
+                    .into()
+            } else {
+                // Or display a placeholder if the track doesn't have an album
+                widget::text(EM_DASH())
+                    .style(muted_text)
+                    .wrapping(Wrapping::None)
+                    .ellipsis(text::Ellipsis::End)
+                    .into()
+            }
         },
     )
     .intial_width(Length::FillPortion(1))

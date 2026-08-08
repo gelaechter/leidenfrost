@@ -93,9 +93,7 @@ impl Normalize<BaseItemDto, TrackView> for JellyfinApi {
 
         let track = Track {
             // Id's are guaranteed
-            album_id: album_id
-                .clone()
-                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+            album_id: album_id.clone(),
             // As are disc numbers since they act as foreign keys
             disc_number: parent_index_number.unwrap_or(1),
             bit_rate: media_streams

@@ -14,7 +14,7 @@ pub fn tagged<'a, Message, Theme, Renderer>(
     }
 }
 
-/// A special widget that tags causes the inner widget to be evaluated
+/// A special widget that causes the inner widget to be evaluated
 /// with a specific tag.
 /// 
 /// This essentially makes this usable as a diffing-boundary that explicitly

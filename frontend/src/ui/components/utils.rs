@@ -5,10 +5,6 @@ use iced::widget::{
     text::{Rich, Span},
 };
 
-use crate::ui::router::Route;
-
-use backend::data_view::RelatedArtist;
-
 pub trait IntoLink {
     fn link<'a, Link, Message>(
         self,

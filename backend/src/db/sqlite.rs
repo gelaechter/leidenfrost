@@ -5,11 +5,9 @@ use std::{
 
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveValue, ColumnTrait, Database, DatabaseBackend, DatabaseConnection, DeriveIden,
-    EntityTrait, IntoActiveModel, Iterable, ModelTrait, QueryFilter, QueryOrder, QuerySelect,
-    QueryTrait,
-    sea_query::{Expr, OnConflict, value::prelude::rust_decimal::prelude::ToPrimitive},
-    sqlx::types::Decimal,
+    ActiveValue, ColumnTrait, Database, DatabaseConnection, DeriveIden, EntityTrait,
+    IntoActiveModel, Iterable, ModelTrait, QueryFilter, QueryOrder, QuerySelect, Select,
+    sea_query::{Expr, OnConflict},
 };
 use tokio::{
     runtime::Builder,
@@ -20,9 +18,9 @@ use tokio::{
 use crate::{
     api::{
         endpoint_api::{
-            AlbumSorting, ArtistAlbums, Capabilities, GetAlbumsParams, GetArtistsParams,
-            GetGenresParams, GetPlaylistsParams, GetTracksParams, MusicEndpoint, Pagination,
-            SearchParams, SearchResult, SortOrder, TrackSorting,
+            AlbumSorting, Capabilities, GetAlbumsParams, GetArtistsParams, GetGenresParams,
+            GetPlaylistsParams, GetTracksParams, MusicEndpoint, Pagination, SearchParams,
+            SearchResult, SortOrder, TrackSorting,
         },
         jellyfin::errors::ApiError,
     },
@@ -877,7 +875,9 @@ impl MusicEndpoint for EndpointDB {
                     });
                 }
                 AlbumSorting::DateReleased => track::COLUMN.release_date.0.into_expr(),
-                AlbumSorting::TrackCount => todo!(),
+                AlbumSorting::TrackCount => {
+                    Expr::cust("SELECT COUNT(id) FROM track WHERE track.album_id = album.id")
+                }
             };
 
             match sorting.order {
@@ -919,12 +919,91 @@ impl MusicEndpoint for EndpointDB {
     }
 
     /// Fetches albums from an artist
+    /// THESE ARE EXPLICITLY ALL
     async fn get_artist_albums(
         &self,
         artist_id: String,
         params: GetAlbumsParams,
-    ) -> Result<ArtistAlbums> {
-        todo!()
+    ) -> Result<Vec<AlbumView>> {
+        let GetAlbumsParams {
+            pagination,
+            sorting,
+        } = params;
+
+        let select: Select<album::Entity> = todo!();
+
+        // Pagination
+        let paginated_select = if let Some(Pagination { limit, start_page }) = pagination {
+            select.limit(limit).offset(start_page)
+        } else {
+            select
+        };
+
+        let select = paginated_select
+            .find_also_linked(album::AlbumToGenres)
+            .find_also(album::Entity, artist::Entity)
+            .group_by(album::Column::Id);
+
+        // Sorting
+        let select = if let Some(sorting) = sorting {
+            let criteria = match sorting.by {
+                AlbumSorting::Name => album::COLUMN.title.0.into_expr(),
+                AlbumSorting::AlbumArtist => artist::COLUMN.name.0.into_expr(),
+                AlbumSorting::Duration => {
+                    // Subquery for duration sort
+                    Expr::cust(
+                        "SELECT COALESCE(SUM(track.duration), 0) FROM track WHERE track.album_id = album.id",
+                    )
+                }
+                AlbumSorting::Random => Expr::cust("RANDOM()"),
+                AlbumSorting::DateAdded => {
+                    return Err(ApiError::Unsupported {
+                        call: "AlbumSorting::DateAdded".to_owned(),
+                        endpoint: "Database".to_owned(),
+                    });
+                }
+                AlbumSorting::DateReleased => track::COLUMN.release_date.0.into_expr(),
+                AlbumSorting::TrackCount => {
+                    Expr::cust("SELECT COUNT(id) FROM track WHERE track.album_id = album.id")
+                }
+            };
+
+            match sorting.order {
+                SortOrder::Ascending => select.order_by_asc(criteria),
+                SortOrder::Descending => select.order_by_desc(criteria),
+            }
+        } else {
+            select
+        };
+
+        // Consolidate
+        let albums = select.consolidate().all(&self.db).await?;
+
+        // Additionally find the duration for every album
+        let duration_map: HashMap<String, i64> = track::Entity::find()
+            .select_only()
+            .column(track::Column::AlbumId)
+            .column_as(track::Column::Duration.sum(), "total_duration")
+            .filter(track::Column::AlbumId.is_in(albums.iter().map(|a| &a.0.id)))
+            .group_by(track::Column::AlbumId)
+            .into_tuple::<(String, i64)>()
+            .all(&self.db)
+            .await?
+            .into_iter()
+            .collect();
+
+        // Put into a AlbumView
+        let albums = albums
+            .into_iter()
+            .map(|(album, genres, artists)| AlbumView {
+                duration: duration_map.get(&album.id).copied(),
+                album_artists: artists.into_iter().map(Into::into).collect(),
+                genres: genres.into_iter().map(Into::into).collect(),
+                album,
+            })
+            .collect();
+
+        Ok(albums)
     }
 
     /// Fetches an artist
