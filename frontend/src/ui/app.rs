@@ -14,12 +14,12 @@ use iced::{
 use iced::widget::pane_grid;
 
 use crate::ui::{
-    ICMsg,
-    player::{self, MpvPlayer, Player, PlayerMsg},
-    playerbar::{self, PlayerBar, PlayerBarMsg},
+    ReceiverContainer,
+    player::{GenericPlayer, PlayerMsg},
+    playerbar::{PlayerBar, PlayerBarMsg},
     queue::{self, Queue},
-    router::{self, Router, RouterMsg},
-    sidebar::{self, Sidebar, SidebarMsg},
+    router::{Router, RouterMsg, settings::SettingsMsg},
+    sidebar::{Sidebar, SidebarMsg},
 };
 
 /// App is the top level model in this application
@@ -32,16 +32,16 @@ pub struct App {
     sidebar: Sidebar,
     router: Router,
     queue: Queue,
-    player: MpvPlayer,
+    player: GenericPlayer,
     player_bar: PlayerBar,
 }
 
-impl App {
-    pub fn new() -> Self {
+impl Default for App {
+    fn default() -> Self {
         let sidebar = Sidebar::default();
         let router = Router::default();
         let queue = Queue::default();
-        let player = MpvPlayer::default();
+        let player = GenericPlayer::default();
         let player_bar = PlayerBar::default();
 
         // Creates a new pane state and immediately splits it
@@ -83,9 +83,40 @@ pub enum Message {
     Sidebar(SidebarMsg),
     Queue(Box<queue::Message>),
     Router(RouterMsg),
-    PlayerBar(PlayerBarMsg),
     KeyboardEvent(keyboard::Event),
-    Player(PlayerMsg),
+    Player(Box<PlayerMsg>),
+    PlayerBar(PlayerBarMsg),
+    Settings(SettingsMsg),
+}
+
+impl From<PlayerMsg> for Message {
+    fn from(value: PlayerMsg) -> Self {
+        Self::Player(Box::new(value))
+    }
+}
+
+impl From<PlayerBarMsg> for Message {
+    fn from(value: PlayerBarMsg) -> Self {
+        Self::PlayerBar(value)
+    }
+}
+
+impl From<SettingsMsg> for Message {
+    fn from(value: SettingsMsg) -> Self {
+        Self::Settings(value)
+    }
+}
+
+impl From<RouterMsg> for Message {
+    fn from(value: RouterMsg) -> Self {
+        Self::Router(value)
+    }
+}
+
+impl From<SidebarMsg> for Message {
+    fn from(value: SidebarMsg) -> Self {
+        Self::Sidebar(value)
+    }
 }
 
 /// The main layout of the application
@@ -117,74 +148,15 @@ impl App {
                 self.panes.resize(split, ratio);
                 Task::none()
             }
-            Message::Sidebar(sidebar_message) => match sidebar_message {
-                ICMsg::Cmd(cmd) => self.sidebar.update(cmd).map(Message::Sidebar),
-                ICMsg::Out(out) => match out {
-                    // Pass update router upwards
-                    sidebar::Out::UpdateRoute(ref route) => Task::batch([self
-                        .router
-                        .update(router::Cmd::ChangeRoute(route.clone()))
-                        .map(Message::Router)]),
-                },
-            },
+            Message::Sidebar(sidebar_message) => {
+                self.sidebar.update(sidebar_message).map(Message::Sidebar)
+            }
             Message::Queue(queue_message) => self
                 .queue
                 .update(*queue_message)
                 .map(|m| Message::Queue(Box::new(m))),
-            Message::Router(message) => match message {
-                ICMsg::Cmd(cmd) => self.router.update(cmd).map(Message::Router),
-                ICMsg::Out(out) => match out {
-                    router::Out::ChangeRoute(route) => {
-                        // The sidebar needs to be notified so it can display the current route
-                        self.sidebar
-                            .update(sidebar::Cmd::RouteChanged(route))
-                            .map(Message::Sidebar)
-                    }
-                    router::Out::TracksMsg(out) => {
-                        // Tracks has emitted an out message
-                        match out {
-                            // It wants to play a track
-                            router::tracks::Out::PlayTrack { tracks, index } => {
-                                dbg!("Playtrack triggered");
-                                Task::batch([
-                                    self.player // Play all
-                                        .play_all(tracks)
-                                        .map(Message::Player),
-                                    self.player // Then set the index
-                                        .play_index(index)
-                                        .map(Message::Player),
-                                ])
-                            }
-                        }
-                    }
-                },
-            },
-            // Player bar wiring
-            Message::PlayerBar(message) => match message {
-                ICMsg::Cmd(cmd) => self.player_bar.update(cmd).map(Message::PlayerBar),
-                ICMsg::Out(out) => {
-                    type Bar = playerbar::Out;
-                    type Player = player::Cmd;
-
-                    match out {
-                        // Forward messages for the player
-                        Bar::Pause(p) => self.player.pause(p).map(Message::Player),
-                        Bar::Seek(d) => self.player.seek(d).map(Message::Player),
-                        Bar::Next => self.player.next().map(Message::Player),
-                        Bar::Previous => self.player.previous().map(Message::Player),
-                        Bar::Stop => self.player.stop().map(Message::Player),
-                        Bar::Shuffle(s) => self.player.set_shuffle(s).map(Message::Player),
-                        Bar::Repeat(r) => self.player.change_repeat_mode(r).map(Message::Player),
-                        Bar::PlayRandom => Task::done(todo!("TODO:")),
-                        Bar::Volume(v) => self.player.volume(v).map(Message::Player),
-                        // Forward change route (from clicking links)
-                        Bar::ChangeRoute(route) => self
-                            .router
-                            .update(router::Cmd::ChangeRoute(route))
-                            .map(Message::Router),
-                    }
-                }
-            },
+            Message::Router(message) => self.router.update(message).map(Message::Router),
+            Message::PlayerBar(message) => self.player_bar.update(message).map(Message::PlayerBar),
             Message::KeyboardEvent(event) => match event {
                 keyboard::Event::KeyPressed {
                     key: Key::Named(Named::F11),
@@ -193,33 +165,26 @@ impl App {
                 _ => Task::none(),
             },
             Message::Player(message) => {
-                match message {
-                    ICMsg::Cmd(cmd) => self.player.update(cmd).map(Message::Player),
-                    ICMsg::Out(out) => match out {
-                        player::Out::Event(player_event) => self
-                            .player_bar
-                            .update(playerbar::Cmd::Event(player_event))
-                            .map(Message::PlayerBar),
-                        // Handle queue updates that should reflect the actual player queue
-                        player::Out::Queue(queue_event) => match *queue_event {
-                            player::QueueEvent::Append(track_view) => self
-                                .queue
-                                .update(queue::Message::Append(track_view))
-                                .map(|m| Message::Queue(Box::new(m))),
-                        },
-                    },
-                    // TODO: actually handle errors
-                    ICMsg::Err(e) => todo!(),
-                }
+                self.player.update(*message);
+                Task::none()
             }
+            Message::Settings(cmd) => self.router.settings.update(cmd).map(Message::Settings),
         }
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch([
+        // Register all the event receivers
+        let wa = inventory::iter::<ReceiverContainer>;
+        let mut subscriptions: Vec<Subscription<Message>> =
+            wa.into_iter().map(|s| (s.0)()).collect();
+
+        subscriptions.extend([
+            // Additional subscriptions
             keyboard::listen().map(Message::KeyboardEvent),
-            MpvPlayer::subscription().map(Message::Player),
-        ])
+            GenericPlayer::subscription().map(|m| Message::Player(Box::new(m))),
+        ]);
+
+        Subscription::batch(subscriptions)
     }
 
     pub fn theme(&self) -> Option<Theme> {

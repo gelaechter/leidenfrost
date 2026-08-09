@@ -1,0 +1,12 @@
+[package]
+name = "leidenfrost_macros"
+version.workspace = true
+authors.workspace = true
+edition = "2024"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "3.0.3"
+quote = "1.0.47"

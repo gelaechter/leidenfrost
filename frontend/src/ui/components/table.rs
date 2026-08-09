@@ -19,8 +19,6 @@ use iced::{
     },
 };
 
-use crate::ui::{ICMsg, ToCmdMsg, ToOutMsg};
-
 /// A table component
 pub struct Table<T, M> {
     /// The table rows
@@ -38,6 +36,7 @@ pub struct Table<T, M> {
     mouse_position: Point,
     /// Information about a resize process
     resize_info: Option<ResizeInfo>,
+    double_click_callback: Option<fn(T)>,
 }
 
 pub struct ResizeInfo {
@@ -58,6 +57,7 @@ impl<T, M> Default for Table<T, M> {
             mouse_position: Point::default(),
             resize_info: Option::default(),
             visible_chunks: HashSet::default(),
+            double_click_callback: None,
         }
     }
 }
@@ -94,6 +94,12 @@ impl<T, M> Table<T, M> {
         self.columns.push(column);
         self
     }
+
+    /// Adds a double click handler to the table
+    pub fn on_double_click_row(mut self, on_click: fn(item: T)) -> Self {
+        self.double_click_callback = Some(on_click);
+        self
+    }
 }
 
 pub struct Row<T> {
@@ -104,8 +110,8 @@ pub struct Row<T> {
     selected: bool,
     /// Tracking when a row was last clicked to register double clicks
     ///
-    /// TODO: Consider stealing™ the `decorator/double_click` widget from halloy:
-    /// <https://github.com/squidowl/halloy/blob/c3f2e4a30a1ac787342495640eb5de671de6d695/src/widget/double_click.rs>
+    /// TODO: Consider stealing™ the `decorator/double_click` widget from
+    /// halloy: <https://github.com/squidowl/halloy/blob/c3f2e4a30a1ac787342495640eb5de671de6d695/src/widget/double_click.rs>
     clicked_at: Option<Instant>,
 }
 
@@ -253,14 +259,14 @@ const CHUNK_SIZE: usize = 100;
 /// A table message defined by
 /// - T: The table data type
 /// - M: The cell message
-pub type TableMsg<T, M> = ICMsg<Cmd<M>, Out<T>>;
+pub type TableMsg<M> = Cmd<M>;
 
 impl<T, M> Table<T, M>
 where
     T: std::fmt::Debug + Clone + MaybeSend + 'static,
     M: std::fmt::Debug + Clone + MaybeSend + 'static,
 {
-    pub fn view(&self) -> Element<'_, TableMsg<T, M>> {
+    pub fn view(&self) -> Element<'_, TableMsg<M>> {
         let content = widget::column![
             widget::rule::horizontal(1),
             self.table_header(),
@@ -280,12 +286,11 @@ where
             mouse_area
         };
 
-        let el: Element<'_, Cmd<M>> = mouse_area.into();
-        el.map(ToCmdMsg::cmd_msg)
+        mouse_area.into()
     }
 
-    pub fn update(&mut self, message: impl Into<TableMsg<T, M>>) -> Task<TableMsg<T, M>> {
-        message.into().cmd(|c| match c {
+    pub fn update(&mut self, message: impl Into<TableMsg<M>>) -> Task<TableMsg<M>> {
+        match message.into() {
             Cmd::RowShown(row_idx) => {
                 self.rows[row_idx].visible = true;
                 Task::none()
@@ -307,7 +312,7 @@ where
                 let col = &self.columns[col_id];
 
                 (col.update)(&mut row.item, message)
-                    .map(move |m| Cmd::ColumnDriver(row_idx, col_id, m).cmd_msg())
+                    .map(move |m| Cmd::ColumnDriver(row_idx, col_id, m))
             }
             Cmd::None => Task::none(),
             Cmd::MouseMoved(position) => {
@@ -386,7 +391,7 @@ where
                     // Abort resizing if any column goes below the minimum
                     // TODO: This fully disengages the resizing process; If possible this should
                     // instead disallow any further shrinking but allow growth
-                    Task::done(Cmd::MouseReleased.cmd_msg())
+                    Task::done(Cmd::MouseReleased)
                 }
             }
             Cmd::RowClicked(idx) => {
@@ -396,8 +401,11 @@ where
                 // Check if the row was clicked less than 200ms ago
                 if let Some(instant) = row.clicked_at
                     && Instant::now().duration_since(instant) <= Duration::from_millis(200)
+                    // Is a callback registered?
+                    && let Some(double_click_callback) = self.double_click_callback
                 {
-                    return Task::done(Out::DoubleClicked(row.item.clone()).out_msg());
+                    log::debug!("Calling double click callback");
+                    double_click_callback(row.item.clone());
                 }
                 row.clicked_at = Some(Instant::now());
 
@@ -408,7 +416,7 @@ where
 
                 Task::none()
             }
-        })
+        }
     }
 
     /// Calculates the x positions of the end of the columns

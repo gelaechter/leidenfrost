@@ -17,7 +17,7 @@ fn main() {
     #[cfg(feature = "debug")]
     console_subscriber::init();
 
-    iced::application(App::new, App::update, App::view)
+    iced::application(App::default, App::update, App::view)
         .subscription(App::subscription)
         .theme(App::theme)
         .font(include_bytes!("ui/components/icons/leidenfrost.ttf").as_slice())

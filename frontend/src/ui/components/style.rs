@@ -63,7 +63,7 @@ pub fn default_header<'a, Msg: Clone + 'a>(
 }
 
 /// Provides an em dash String to signify missing data
-pub fn EM_DASH() -> String {
+pub fn em_dash() -> String {
     const EM_DASH: &str = "—";
     EM_DASH.to_string()
 }

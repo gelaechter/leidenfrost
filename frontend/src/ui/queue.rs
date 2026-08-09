@@ -53,7 +53,7 @@ impl Queue {
         // The table driver needs to return a task
         if let Message::TableDriver(message) = message {
             return self.table.update(message).map(Message::TableDriver);
-        };
+        }
 
         // Everything else is just side effects
         match message {

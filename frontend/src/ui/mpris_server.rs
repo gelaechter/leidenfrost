@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
+use backend::player::PlayerEvent;
 use iced::Task;
 use mpris_server::{
     LoopStatus, Metadata, PlaybackRate, PlaybackStatus, PlayerInterface, RootInterface, Time,
     TrackId, Volume, zbus::Result, zbus::fdo,
 };
-
-use backend::mpv_data::MpvEvent;
 
 #[derive(Default)]
 struct MprisServer {
@@ -15,12 +14,12 @@ struct MprisServer {
 
 pub enum CmdMsg {
     /// Requests that the player is being built
-    PlayerEvent(MpvEvent),
+    PlayerEvent(PlayerEvent),
 }
 
 pub enum OutMsg {
     /// Requests that the player is being built
-    PlayerEvent(MpvEvent),
+    PlayerEvent(PlayerEvent),
 }
 
 impl MprisServer {

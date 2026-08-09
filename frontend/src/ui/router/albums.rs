@@ -54,7 +54,7 @@ pub enum Message {
     /// The tracks have been fetched
     RowsCreated(Vec<AlbumRow>),
     /// A driver for the table
-    TableDriver(TableMsg<AlbumRow, AlbumCellMsg>),
+    TableDriver(TableMsg<AlbumCellMsg>),
     /// The user requests to play all tracks
     PlayAllAlbums,
 }

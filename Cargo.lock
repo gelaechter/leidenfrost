@@ -3184,7 +3184,9 @@ dependencies = [
  "console-subscriber",
  "env_logger",
  "iced",
+ "inventory",
  "leidenfrost_backend",
+ "leidenfrost_macros",
  "libmpv2",
  "log",
  "mpris-server",
@@ -3223,6 +3225,14 @@ dependencies = [
  "tokio-stream",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "leidenfrost_macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]

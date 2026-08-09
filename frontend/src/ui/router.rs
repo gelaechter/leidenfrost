@@ -9,9 +9,10 @@ use iced::{
     advanced::widget::tree::Tag,
     widget::{self, container::background},
 };
+use macros::Receiver;
 
 use crate::ui::{
-    ICMsg, ToCmdMsg, ToOutMsg,
+    Receiver,
     components::tagged::tagged,
     router::{
         albums::Albums,
@@ -20,7 +21,8 @@ use crate::ui::{
     },
 };
 
-#[derive(Default)]
+#[derive(Default, Receiver)]
+#[message(RouterMsg)]
 pub struct Router {
     /// public so that the app can access the settings
     pub settings: Settings,
@@ -49,22 +51,14 @@ pub enum Route {
 }
 
 #[derive(Debug, Clone)]
-pub enum Cmd {
+pub enum Msg {
     ChangeRoute(Route),
     TracksDriver(tracks::TracksMsg),
     AlbumsDriver(albums::Message),
     SettingsDriver(SettingsMsg),
 }
 
-#[derive(Debug, Clone)]
-pub enum Out {
-    /// The route has changed
-    ChangeRoute(Route),
-    /// The Tracks Route has emitted an [`ICMsg::Out`]
-    TracksMsg(tracks::Out),
-}
-
-pub type RouterMsg = ICMsg<Cmd, Out>;
+pub type RouterMsg = Msg;
 
 impl Router {
     pub fn view(&self) -> Element<'_, RouterMsg> {
@@ -86,11 +80,11 @@ impl Router {
             },
             Route::Favorites => todo!(),
             Route::Albums => RouteView {
-                view: self.albums.view().map(|m| Cmd::AlbumsDriver(m).cmd_msg()),
+                view: self.albums.view().map(Msg::AlbumsDriver),
                 tag: Tag::of::<Albums>(),
             },
             Route::Tracks => RouteView {
-                view: self.tracks.view().map(|m| Cmd::TracksDriver(m).cmd_msg()),
+                view: self.tracks.view().map(Msg::TracksDriver),
                 tag: Tag::of::<Tracks>(),
             },
             Route::AlbumArtists => todo!(),
@@ -100,10 +94,7 @@ impl Router {
             Route::Genre(_) => todo!(),
             Route::Album(_) => todo!(),
             Route::Settings => RouteView {
-                view: self
-                    .settings
-                    .view()
-                    .map(|m| Cmd::SettingsDriver(m).cmd_msg()),
+                view: self.settings.view().map(Msg::SettingsDriver),
                 tag: Tag::of::<Settings>(),
             },
         };
@@ -118,23 +109,14 @@ impl Router {
     }
 
     pub fn update(&mut self, message: impl Into<RouterMsg>) -> Task<RouterMsg> {
-        message.into().cmd(|cmd| match cmd {
-            Cmd::ChangeRoute(route) => {
+        match message.into() {
+            Msg::ChangeRoute(route) => {
                 self.route = route.clone();
-                Task::done(Out::ChangeRoute(route).out_msg())
+                Task::none()
             }
-            Cmd::TracksDriver(message) => self
-                .tracks
-                .update(message)
-                .map(|c| Cmd::TracksDriver(c).cmd_msg()),
-            Cmd::AlbumsDriver(message) => self
-                .albums
-                .update(message)
-                .map(|c| Cmd::AlbumsDriver(c).cmd_msg()),
-            Cmd::SettingsDriver(icmsg) => self
-                .settings
-                .update(icmsg)
-                .map(|c| Cmd::SettingsDriver(c).cmd_msg()),
-        })
+            Msg::TracksDriver(message) => self.tracks.update(message).map(Msg::TracksDriver),
+            Msg::AlbumsDriver(message) => self.albums.update(message).map(Msg::AlbumsDriver),
+            Msg::SettingsDriver(icmsg) => self.settings.update(icmsg).map(Msg::SettingsDriver),
+        }
     }
 }

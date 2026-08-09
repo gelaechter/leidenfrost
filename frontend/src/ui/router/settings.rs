@@ -6,16 +6,18 @@ use iced::{
     Padding, Pixels, Task, Theme, font,
     widget::{self, row},
 };
-use log::warn;
 
 use backend::api::endpoint_api::{EndpointKind, EndpointManager, EndpointType};
+use macros::Receiver;
 
 use crate::ui::{
-    ICMsg, ToCmdMsg, ToOutMsg,
+    Receiver,
     components::{icons, style::header_text},
     router::settings::endpoint::{EndpointMsg, EndpointSettings},
 };
 
+#[derive(Receiver)]
+#[message(Cmd)]
 pub struct Settings {
     /// How much the application is zoomed in
     /// TODO: currently unimplemented
@@ -82,7 +84,9 @@ pub enum Cmd {
     /// Creates a new endpoint
     CreateEndpoint,
     /// The driver for the endpoint gui
-    EndpointMsg(usize, EndpointMsg),
+    EndpointDriver(usize, EndpointMsg),
+    SyncEndpoints,
+    RemoveEndpoint(usize),
 }
 
 #[derive(Clone, Debug)]
@@ -90,17 +94,17 @@ pub enum Out {
     ThemeChanged(Theme),
 }
 
-pub type SettingsMsg = ICMsg<Cmd, Out>;
+pub type SettingsMsg = Cmd;
 
 impl Settings {
     pub fn view(&self) -> Element<'_, SettingsMsg> {
         let view = widget::column([self.header(), self.tabs()]);
 
-        widget::sensor(view).on_show(|_| Cmd::Show.cmd_msg()).into()
+        widget::sensor(view).on_show(|_| Cmd::Show).into()
     }
 
     pub fn update(&mut self, message: SettingsMsg) -> Task<SettingsMsg> {
-        message.cmd(|c: Cmd| match c {
+        match message {
             Cmd::Show => {
                 if self.available_font_families.len() > font::Family::VARIANTS.len() {
                     return Task::none();
@@ -110,18 +114,17 @@ impl Settings {
                     .map(|c| match c {
                         Ok(f) => Some(f),
                         Err(e) => {
-                            warn!("Couldn't get system fonts: {e:?}");
+                            log::warn!("Couldn't get system fonts: {e:?}");
                             None
                         }
                     })
                     .and_then(Task::done)
-                    .map(|c| Cmd::FontsListed(c).cmd_msg())
+                    .map(Cmd::FontsListed)
             }
             Cmd::ScaleChanged(_) => todo!(),
             Cmd::ThemeChanged(theme) => {
                 self.theme = Some(theme.clone());
-                // Emit event
-                Task::done(Out::ThemeChanged(theme).out_msg())
+                Task::none()
             }
             Cmd::FontChanged(family) => {
                 self.font_family = family;
@@ -140,51 +143,42 @@ impl Settings {
 
                 Task::none()
             }
-            Cmd::EndpointMsg(idx, icmsg) => match (idx, icmsg) {
-                // Sync the endpoints
-                (_, ICMsg::Out(endpoint::Out::SyncEndpoints)) => {
-                    let local_endpoints: Vec<EndpointKind> = self
-                        .endpoints
-                        .clone()
-                        .into_iter()
-                        .filter_map(|e| e.selected.then_some(e.endpoint).flatten())
-                        .collect();
-
-                    let set_endpoint_task: Task<()> = Task::future(async move {
-                        log::info!("set_endpoint_task");
-                        EndpointManager::update_endpoints(local_endpoints)
-                            .await
-                            .unwrap();
-                    })
-                    .discard();
-
-                    let index_task = Task::future(async move {
-                        log::info!("index_task");
-                        EndpointManager::index_all_endpoints().await.unwrap();
-                    });
-
-                    log::info!("starting both tasks");
-                    set_endpoint_task.chain(index_task).discard()
-                }
-                // Remove an endpoint
-                (idx, ICMsg::Out(endpoint::Out::RemoveEndpoint)) => {
-                    self.endpoints.remove(idx);
-
-                    // Trigger resync
-                    Task::done(
-                        Cmd::EndpointMsg(0, ICMsg::Out(endpoint::Out::SyncEndpoints)).cmd_msg(),
-                    )
-                }
-                // Otherwise pass through
-                (idx, ICMsg::Cmd(c)) => self.endpoints[idx]
-                    .update(c)
-                    .map(move |m| Cmd::EndpointMsg(idx, m).cmd_msg()),
-            },
+            Cmd::EndpointDriver(idx, msg) => self.endpoints[idx]
+                .update(msg)
+                .map(move |m| Cmd::EndpointDriver(idx, m)),
             Cmd::CreateEndpoint => {
                 self.endpoints.push(EndpointSettings::default());
                 Task::none()
             }
-        })
+            Cmd::SyncEndpoints => {
+                let local_endpoints: Vec<EndpointKind> = self
+                    .endpoints
+                    .clone()
+                    .into_iter()
+                    .filter_map(|e| e.selected.then_some(e.endpoint).flatten())
+                    .collect();
+
+                let set_endpoint_task: Task<()> = Task::future(async move {
+                    log::info!("set_endpoint_task");
+                    EndpointManager::update_endpoints(local_endpoints)
+                        .await
+                        .unwrap();
+                })
+                .discard();
+
+                let index_task = Task::future(async move {
+                    log::info!("index_task");
+                    EndpointManager::index_all_endpoints().await.unwrap();
+                });
+
+                log::info!("starting both tasks");
+                set_endpoint_task.chain(index_task).discard()
+            }
+            Cmd::RemoveEndpoint(idx) => {
+                self.endpoints.remove(idx);
+                Task::done(Cmd::SyncEndpoints)
+            }
+        }
     }
 
     pub fn header(&self) -> Element<'_, SettingsMsg> {
@@ -224,13 +218,13 @@ impl Settings {
                             widget::column([
                                 widget::column(self.endpoints.iter().enumerate().map(
                                     |(idx, e)| {
-                                        e.view().map(move |m| Cmd::EndpointMsg(idx, m).cmd_msg())
+                                        e.view().map(move |m| Cmd::EndpointDriver(idx, m))
                                     },
                                 ))
                                 .spacing(6)
                                 .into(),
                                 widget::button("Add Endpoint")
-                                    .on_press(Cmd::CreateEndpoint.cmd_msg())
+                                    .on_press(Cmd::CreateEndpoint)
                                     .width(Length::Fill)
                                     .into(),
                             ])
@@ -243,7 +237,7 @@ impl Settings {
                     "Theme",
                     "The application theme",
                     widget::pick_list(self.theme.as_ref(), Theme::ALL, Theme::to_string)
-                        .on_select(|s| Cmd::ThemeChanged(s).cmd_msg())
+                        .on_select(Cmd::ThemeChanged)
                         .width(FillPortion(3)),
                 ),
                 self.settings_entry(
@@ -254,7 +248,7 @@ impl Settings {
                         self.available_font_families.as_slice(),
                         font::Family::to_string,
                     )
-                    .on_select(|family| Cmd::FontChanged(family).cmd_msg())
+                    .on_select(Cmd::FontChanged)
                     .width(FillPortion(3)),
                 ),
             ])

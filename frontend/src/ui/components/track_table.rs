@@ -9,7 +9,7 @@ use crate::ui::{
     components::{
         icons,
         image::{self, Image},
-        style::{EM_DASH, column_header, muted_text},
+        style::{column_header, em_dash, muted_text},
         table::{Column, Table, TableMsg},
         utils::{IntoLink, IntoLinks, format_duration},
     },
@@ -31,7 +31,7 @@ use iced::{
 /// A table showing tracks
 pub type TrackTable = Table<TrackRow, TrackCellMsg>;
 /// The corresponding message
-pub type TrackTableMsg = TableMsg<TrackRow, TrackCellMsg>;
+pub type TrackTableMsg = TableMsg<TrackCellMsg>;
 
 /// The data that represents one row in the table
 #[derive(Debug, Clone)]
@@ -155,7 +155,7 @@ pub fn album_column() -> Column<TrackRow, TrackCellMsg> {
                     .into()
             } else {
                 // Or display a placeholder if the track doesn't have an album
-                widget::text(EM_DASH())
+                widget::text(em_dash())
                     .style(muted_text)
                     .wrapping(Wrapping::None)
                     .ellipsis(text::Ellipsis::End)
@@ -177,7 +177,7 @@ pub fn combined_title_column() -> Column<TrackRow, TrackCellMsg> {
                 ..
             } = row;
 
-            let track_title = track.title.clone().unwrap_or(EM_DASH());
+            let track_title = track.title.clone().unwrap_or(em_dash());
             let artists = artists.clone();
 
             // Image
