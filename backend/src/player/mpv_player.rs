@@ -1,5 +1,4 @@
 use libmpv2::{Format, Mpv, events::PropertyData};
-use tokio::sync::broadcast;
 
 use crate::{
     data_view::TrackView,
@@ -54,14 +53,12 @@ pub struct MpvPlayer(Mpv);
 type Result<T> = player::Result<T>;
 
 impl Player for MpvPlayer {
-    fn new() -> super::Result<(Self, broadcast::Receiver<super::PlayerEvent>)> {
+    fn new(on_event: impl Fn(PlayerEvent) + Send + 'static) -> Result<Self> {
         let mpv = Mpv::with_initializer(|init| {
             init.set_option("vid", "no")?;
             Ok(())
         })
         .unwrap();
-
-        let (sender, receiver) = broadcast::channel(100);
 
         // Since [`Mpv::wait_event`] takes `&mut self` we
         // create a second Mpv client just for receiving events
@@ -91,6 +88,7 @@ impl Player for MpvPlayer {
             .unwrap();
 
         // Start a thread that continually checks the event queue
+        // it then converts the mpv events into player events and uses the callback
         std::thread::spawn(move || {
             // For some god-forsaken reason mpv stores the
             // repeat state as strings ("no" and "inf")
@@ -142,25 +140,18 @@ impl Player for MpvPlayer {
                         _ => continue,
                     };
 
-                    let send_res = sender.send(player_event);
-                    if send_res.is_err() {
-                        log::warn!(
-                            "A player event has been emitted before the UI was ready\n\
-                        to receive it. Has something gotten out of order?",
-                        );
-                    };
+                    on_event(player_event);
                 }
             }
         });
 
         // Reset repeat state
-        mpv.set_property(LOOP_FILE, "no");
-        mpv.set_property(LOOP_PLAYLIST, "no");
+        mpv.set_property(LOOP_FILE, "no")?;
+        mpv.set_property(LOOP_PLAYLIST, "no")?;
 
-        //
         let mpv_player = Self(mpv);
 
-        Ok((mpv_player, receiver))
+        Ok(mpv_player)
     }
 
     fn pause(&self, paused: bool) -> Result<()> {
@@ -284,6 +275,6 @@ fn try_track_url(track_view: TrackView) -> Result<OrmUrl> {
     {
         Ok(url)
     } else {
-        Err(PlayerError::NoStream(track_view))
+        Err(PlayerError::NoStream(Box::new(track_view)))
     }
 }

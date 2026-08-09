@@ -18,10 +18,12 @@ use crate::ui::{
         style::{EM_DASH, muted_text},
         utils::{IntoLink, IntoLinks, format_duration},
     },
-    player::{PlayerEvent, RepeatMode},
     router::Route,
 };
-use backend::data_view::TrackView;
+use backend::{
+    data_view::TrackView,
+    player::{PlayerEvent, RepeatMode},
+};
 
 #[derive(Default)]
 pub struct PlayerBar {
@@ -90,6 +92,7 @@ impl PlayerBar {
         message.into().cmd(|c| match c {
             Cmd::Event(e) => {
                 match e {
+                    PlayerEvent::Shutdown => todo!(),
                     PlayerEvent::Shuffle(shuffle) => self.shuffle = shuffle,
                     PlayerEvent::Repeat(repeat_mode) => self.repeat_mode = repeat_mode,
                     PlayerEvent::Pause(paused) => self.paused = paused,
@@ -97,6 +100,7 @@ impl PlayerBar {
                     PlayerEvent::PlaybackPos(_) => {}
                     PlayerEvent::Duration(duration) => self.duration = duration,
                     PlayerEvent::Volume(volume) => self.volume = volume,
+                    PlayerEvent::Error(player_error) => todo!(),
                 }
                 Task::none()
             }

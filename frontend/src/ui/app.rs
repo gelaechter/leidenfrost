@@ -1,5 +1,6 @@
 //! The App is the top level model in leidenfrost
 
+use backend::player::{Player, PlayerError};
 use iced::{
     Element,
     Length::Fill,
@@ -15,7 +16,7 @@ use iced::widget::pane_grid;
 
 use crate::ui::{
     ICMsg,
-    player::{self, MpvPlayer, Player, PlayerMsg},
+    player::{self, GenericPlayer, PlayerMsg},
     playerbar::{self, PlayerBar, PlayerBarMsg},
     queue::{self, Queue},
     router::{self, Router, RouterMsg},
@@ -32,7 +33,7 @@ pub struct App {
     sidebar: Sidebar,
     router: Router,
     queue: Queue,
-    player: MpvPlayer,
+    player: GenericPlayer,
     player_bar: PlayerBar,
 }
 
@@ -41,7 +42,7 @@ impl App {
         let sidebar = Sidebar::default();
         let router = Router::default();
         let queue = Queue::default();
-        let player = MpvPlayer::default();
+        let player = GenericPlayer::default();
         let player_bar = PlayerBar::default();
 
         // Creates a new pane state and immediately splits it
@@ -166,17 +167,19 @@ impl App {
                     type Bar = playerbar::Out;
                     type Player = player::Cmd;
 
+                    fn err_to_task(res: Result<(), PlayerError>) {}
+
                     match out {
                         // Forward messages for the player
-                        Bar::Pause(p) => self.player.pause(p).map(Message::Player),
-                        Bar::Seek(d) => self.player.seek(d).map(Message::Player),
-                        Bar::Next => self.player.next().map(Message::Player),
-                        Bar::Previous => self.player.previous().map(Message::Player),
-                        Bar::Stop => self.player.stop().map(Message::Player),
-                        Bar::Shuffle(s) => self.player.set_shuffle(s).map(Message::Player),
-                        Bar::Repeat(r) => self.player.change_repeat_mode(r).map(Message::Player),
+                        Bar::Pause(p) => self.player.pause(p).into(),
+                        Bar::Seek(d) => self.player.seek(d).into(),
+                        Bar::Next => self.player.next().into(),
+                        Bar::Previous => self.player.previous().into(),
+                        Bar::Stop => self.player.stop().into(),
+                        Bar::Shuffle(s) => self.player.set_shuffle(s).into(),
+                        Bar::Repeat(r) => self.player.change_repeat_mode(r).into(),
                         Bar::PlayRandom => Task::done(todo!("TODO:")),
-                        Bar::Volume(v) => self.player.volume(v).map(Message::Player),
+                        Bar::Volume(v) => self.player.volume(v).into(),
                         // Forward change route (from clicking links)
                         Bar::ChangeRoute(route) => self
                             .router
@@ -218,7 +221,7 @@ impl App {
     pub fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             keyboard::listen().map(Message::KeyboardEvent),
-            MpvPlayer::subscription().map(Message::Player),
+            GenericPlayer::subscription().map(Message::Player),
         ])
     }
 

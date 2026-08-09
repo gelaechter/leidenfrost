@@ -32,7 +32,7 @@ log.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-test_case = "3.3.1"
+test-case = "3.3.1"
 
 [features]
 default = []

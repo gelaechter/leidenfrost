@@ -46,7 +46,7 @@ pub enum PlayerEvent {
     /// The volume (0 to 100) has changed
     Volume(u32),
     /// An error has occured
-    Error(PlayerError)
+    Error(PlayerError),
 }
 
 pub type Result<T> = std::result::Result<T, PlayerError>;
@@ -56,13 +56,12 @@ pub enum PlayerError {
     #[error("unknown player error")]
     Unknown,
     #[error("The TrackViews StreamURL was None: {0:?}")]
-    NoStream(TrackView),
+    NoStream(Box<TrackView>),
 }
 
-pub trait Player {
-    /// Constructs a new player instance as well as an event stream
-    /// that updates the player
-    fn new() -> Result<(Self, broadcast::Receiver<PlayerEvent>)>;
+pub trait Player: Sized {
+    /// Constructs a new player with a callback for events.
+    fn new(on_event: impl Fn(PlayerEvent) + Send + 'static) -> Result<Self>;
     /// (Un)pauses the player
     fn pause(&self, paused: bool) -> Result<()>;
     /// Seek to a specific time in seconds
