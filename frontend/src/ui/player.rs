@@ -14,7 +14,9 @@ use backend::{
     player::{Player, PlayerError, PlayerEvent, mpv_player::MpvPlayer},
 };
 
-use crate::ui::{ICMsg, ToErrMsg, ToOutMsg, app::{Receiver, ReceiverContainer}};
+use crate::ui::{ICMsg, Receiver, ReceiverContainer, ToOutMsg};
+
+use macros::Receiver;
 
 #[derive(Clone, Debug)]
 pub enum Cmd {
@@ -43,6 +45,8 @@ pub type PlayerMsg = ICMsg<Cmd, Out, PlayerError>;
 static PLAYER_EVENT_CHANNEL: LazyLock<broadcast::Sender<PlayerEvent>> =
     LazyLock::new(|| broadcast::channel(128).0);
 
+#[derive(Receiver)]
+#[message(PlayerMsg)]
 pub struct GenericPlayer {
     player_impl: PlayerImpl,
 }
@@ -158,35 +162,4 @@ impl GenericPlayer {
     fn volume(&self, percentage: u32) -> backend::player::Result<()> {
         self.player_impl.inner().volume(percentage)
     }
-}
-
-static RECEIVER_CHANNEL: LazyLock<broadcast::Sender<PlayerMsg>> =
-    LazyLock::new(|| broadcast::channel(128).0);
-
-
-impl Receiver<PlayerMsg> for GenericPlayer {
-    fn send(msg: impl Into<PlayerMsg>) {
-        let message = msg.into();
-        log::debug!("Sent: {message:?}");
-        RECEIVER_CHANNEL.send(message).unwrap();
-    }
-
-    fn receive() -> iced::Subscription<PlayerMsg> {
-        fn subscribe_global_events() -> impl Stream<Item = PlayerMsg> {
-            use tokio_stream::StreamExt;
-
-            let stream: broadcast::Receiver<ICMsg<Cmd, Out, PlayerError>> = RECEIVER_CHANNEL.subscribe();
-            BroadcastStream::new(stream).filter_map(Result::ok)
-        }
-
-        Subscription::run(subscribe_global_events)
-    }
-
-    fn collect() -> Subscription<super::app::Message> {
-        Self::receive().map(super::app::Message::Player)
-    }
-}
-
-inventory::submit! {
-    ReceiverContainer(GenericPlayer::collect)
 }

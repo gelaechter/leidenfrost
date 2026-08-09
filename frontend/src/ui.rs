@@ -13,7 +13,7 @@ use std::{
     fmt::{self, Debug},
 };
 
-use iced::Task;
+use iced::{Subscription, Task};
 
 // TODO: Do some thinking if this is not completely over-engineered
 /// This is an inter-component-message consisting of two variants:
@@ -132,3 +132,18 @@ where
         }
     }
 }
+
+pub struct ReceiverContainer(pub fn() -> iced::Subscription<app::Message>);
+
+/// Receive data via a global channel \
+/// This let's us sidestep the routing problem at the cost of
+/// intransparent data flows
+pub trait Receiver<LocalMsg> {
+    fn send(msg: impl Into<LocalMsg>);
+
+    fn receive() -> Subscription<LocalMsg>;
+
+    fn collect() -> Subscription<app::Message>;
+}
+
+inventory::collect!(ReceiverContainer);

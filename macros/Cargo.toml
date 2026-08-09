@@ -8,7 +8,5 @@ edition = "2024"
 proc-macro = true
 
 [dependencies]
-
-[features]
-default = []
-debug = ["tokio/tracing", "dep:console-subscriber"]
+syn = "3.0.3"
+quote = "1.0.47"

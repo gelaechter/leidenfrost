@@ -20,6 +20,7 @@ zbus = "5.15.0"
 inventory = "0.3.24"
 
 backend = { package = "leidenfrost_backend", path = "../backend" }
+macros = { package = "leidenfrost_macros", path = "../macros" }
 
 tokio.workspace = true
 tokio-stream.workspace = true

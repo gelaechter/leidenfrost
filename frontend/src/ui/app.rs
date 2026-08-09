@@ -15,12 +15,7 @@ use iced::{
 use iced::widget::pane_grid;
 
 use crate::ui::{
-    ICMsg,
-    player::{self, GenericPlayer, PlayerMsg},
-    playerbar::{self, PlayerBar, PlayerBarMsg},
-    queue::{self, Queue},
-    router::{self, Router, RouterMsg},
-    sidebar::{self, Sidebar, SidebarMsg},
+    ICMsg, ReceiverContainer, player::{self, GenericPlayer, PlayerMsg}, playerbar::{self, PlayerBar, PlayerBarMsg}, queue::{self, Queue}, router::{self, Router, RouterMsg}, sidebar::{self, Sidebar, SidebarMsg},
 };
 
 /// App is the top level model in this application
@@ -87,6 +82,12 @@ pub enum Message {
     PlayerBar(PlayerBarMsg),
     KeyboardEvent(keyboard::Event),
     Player(PlayerMsg),
+}
+
+impl From<PlayerMsg> for Message {
+    fn from(value: PlayerMsg) -> Self {
+        Self::Player(value)
+    }
 }
 
 /// The main layout of the application
@@ -205,18 +206,3 @@ impl App {
         self.router.settings.theme.clone()
     }
 }
-
-pub struct ReceiverContainer(pub fn() -> iced::Subscription<Message>);
-
-/// Receive data via a global channel \
-/// This let's us sidestep the routing problem at the cost of
-/// intransparent data flows
-pub trait Receiver<LocalMsg> {
-    fn send(msg: impl Into<LocalMsg>);
-
-    fn receive() -> Subscription<LocalMsg>;
-
-    fn collect() -> Subscription<Message>;
-}
-
-inventory::collect!(ReceiverContainer);

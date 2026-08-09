@@ -15,15 +15,11 @@ use iced::{
 use url::Url;
 
 use crate::ui::{
-    ICMsg, ToCmdMsg, ToOutMsg,
-    app::Receiver,
-    components::{
+    ICMsg, Receiver, ToCmdMsg, ToOutMsg, components::{
         icons,
         style::{EM_DASH, muted_text},
         utils::{IntoLink, IntoLinks, format_duration},
-    },
-    player::{self, GenericPlayer},
-    router::Route,
+    }, player::{self, GenericPlayer}, router::Route,
 };
 use backend::{
     data_view::TrackView,

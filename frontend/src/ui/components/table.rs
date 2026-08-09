@@ -13,7 +13,7 @@ use iced::{
     },
 };
 
-use crate::ui::{ICMsg, ToCmdMsg, ToOutMsg, app::Receiver, player::{self, GenericPlayer}};
+use crate::ui::{ICMsg, ToCmdMsg, ToOutMsg};
 
 /// A table component
 pub struct Table<T, M> {
