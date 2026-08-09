@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use iced::{
     Element,
     Length::{self, Fill, FillPortion},
@@ -10,18 +12,22 @@ use iced::{
         text::{self, Wrapping},
     },
 };
+use url::Url;
 
 use crate::ui::{
     ICMsg, ToCmdMsg, ToOutMsg,
+    app::Receiver,
     components::{
         icons,
         style::{EM_DASH, muted_text},
         utils::{IntoLink, IntoLinks, format_duration},
     },
+    player::{self, GenericPlayer},
     router::Route,
 };
 use backend::{
     data_view::TrackView,
+    db::models::{OrmUrl, Track},
     player::{PlayerEvent, RepeatMode},
 };
 
@@ -88,8 +94,40 @@ pub type PlayerBarMsg = ICMsg<Cmd, Out>;
 impl PlayerBar {
     /// Mutates the model whenever a message is dispatched
     pub fn update(&mut self, message: impl Into<PlayerBarMsg>) -> Task<PlayerBarMsg> {
+        let message = message.into();
+        if let PlayerBarMsg::Out(Out::PlayRandom) = message {
+            GenericPlayer::send(player::Cmd::Play(TrackView {
+                    track: Track {
+                        id: String::new(),
+                        endpoint_id: String::new(),
+                        album_id: String::new(),
+                        disc_number: 0,
+                        bit_rate: None,
+                        bpm: None,
+                        channels: None,
+                        container: None,
+                        duration: None,
+                        image_url: None,
+                        image_blur_hash: None,
+                        last_played_at: None,
+                        lyrics: None,
+                        title: None,
+                        file_path: None,
+                        play_count: None,
+                        release_date: None,
+                        file_size: None,
+                        stream_url: Some(Url::from_str("file:///mnt/NAS/Samuel/Music/flac/Flux Pavilion/I Can’t Stop/01 - I Can’t Stop.flac").unwrap().into()),
+                        track_number: Some(0),
+                        user_favorite: None,
+                    },
+                    artists: vec![],
+                    album_name: None,
+                    genres: vec![],
+                }));
+        }
+
         // We only need to handle commands
-        message.into().cmd(|c| match c {
+        message.cmd(|c| match c {
             Cmd::Event(e) => {
                 match e {
                     PlayerEvent::Shutdown => todo!(),

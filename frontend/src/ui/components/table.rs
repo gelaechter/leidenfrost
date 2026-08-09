@@ -6,20 +6,14 @@ use std::{
 };
 
 use iced::{
-    Border, Color, Element,
-    Length::{self, Fill, FillPortion, Fixed, Shrink},
-    Padding, Point, Size, Task, Theme,
-    advanced::graphics::futures::MaybeSend,
-    alignment::{self, Vertical},
-    mouse::Interaction,
-    widget::{
+    Border, Color, Element, Length::{self, Fill, FillPortion, Fixed, Shrink}, Padding, Point, Size, Task, Theme, advanced::graphics::futures::MaybeSend, alignment::{self, Vertical}, mouse::Interaction, wgpu::naga::back::spv::Capability::GenericPointer, widget::{
         self,
         button::{self, Status, Style},
         row,
     },
 };
 
-use crate::ui::{ICMsg, ToCmdMsg, ToOutMsg};
+use crate::ui::{ICMsg, ToCmdMsg, ToOutMsg, app::Receiver, player::{self, GenericPlayer}};
 
 /// A table component
 pub struct Table<T, M> {

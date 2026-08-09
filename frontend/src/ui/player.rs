@@ -14,13 +14,15 @@ use backend::{
     player::{Player, PlayerError, PlayerEvent, mpv_player::MpvPlayer},
 };
 
-use crate::ui::{ICMsg, ToErrMsg, ToOutMsg};
+use crate::ui::{ICMsg, ToErrMsg, ToOutMsg, app::{Receiver, ReceiverContainer}};
 
 #[derive(Clone, Debug)]
 pub enum Cmd {
     /// An Event received from the player
     /// this needs to be converted to an [`Out`] for public consumption
     Event(PlayerEvent),
+    ///
+    Play(TrackView),
 }
 
 #[derive(Clone, Debug)]
@@ -79,6 +81,10 @@ impl GenericPlayer {
             match c {
                 // Handle the events emitted from [`Self::subscription`]
                 Cmd::Event(event) => Task::done(Out::Event(event).out_msg()),
+                Cmd::Play(track_view) => {
+                    self.play(track_view).unwrap();
+                    Task::none()
+                },
             }
         })
     }
@@ -97,12 +103,6 @@ impl GenericPlayer {
 }
 
 impl GenericPlayer {
-    fn pause(&self, paused: bool) -> Task<PlayerMsg> {
-        if let Err(e) = self.player_impl.inner().pause(paused) {
-            return Task::done(e.err_msg())
-        }
-    }
-
     fn seek(&self, position: f64) -> backend::player::Result<()> {
         self.player_impl.inner().seek(position)
     }
@@ -112,7 +112,7 @@ impl GenericPlayer {
     }
 
     fn play(&self, track: TrackView) -> backend::player::Result<()> {
-        self.player_impl.inner().stop()
+        self.player_impl.inner().play(track)
     }
 
     fn play_all(&self, tracks: Vec<TrackView>) -> backend::player::Result<()> {
@@ -158,4 +158,35 @@ impl GenericPlayer {
     fn volume(&self, percentage: u32) -> backend::player::Result<()> {
         self.player_impl.inner().volume(percentage)
     }
+}
+
+static RECEIVER_CHANNEL: LazyLock<broadcast::Sender<PlayerMsg>> =
+    LazyLock::new(|| broadcast::channel(128).0);
+
+
+impl Receiver<PlayerMsg> for GenericPlayer {
+    fn send(msg: impl Into<PlayerMsg>) {
+        let message = msg.into();
+        log::debug!("Sent: {message:?}");
+        RECEIVER_CHANNEL.send(message).unwrap();
+    }
+
+    fn receive() -> iced::Subscription<PlayerMsg> {
+        fn subscribe_global_events() -> impl Stream<Item = PlayerMsg> {
+            use tokio_stream::StreamExt;
+
+            let stream: broadcast::Receiver<ICMsg<Cmd, Out, PlayerError>> = RECEIVER_CHANNEL.subscribe();
+            BroadcastStream::new(stream).filter_map(Result::ok)
+        }
+
+        Subscription::run(subscribe_global_events)
+    }
+
+    fn collect() -> Subscription<super::app::Message> {
+        Self::receive().map(super::app::Message::Player)
+    }
+}
+
+inventory::submit! {
+    ReceiverContainer(GenericPlayer::collect)
 }

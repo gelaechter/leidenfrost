@@ -143,20 +143,7 @@ impl App {
                     }
                     router::Out::TracksMsg(out) => {
                         // Tracks has emitted an out message
-                        match out {
-                            // It wants to play a track
-                            router::tracks::Out::PlayTrack { tracks, index } => {
-                                dbg!("Playtrack triggered");
-                                Task::batch([
-                                    self.player // Play all
-                                        .play_all(tracks)
-                                        .map(Message::Player),
-                                    self.player // Then set the index
-                                        .play_index(index)
-                                        .map(Message::Player),
-                                ])
-                            }
-                        }
+                        todo!()
                     }
                 },
             },
@@ -169,23 +156,9 @@ impl App {
 
                     fn err_to_task(res: Result<(), PlayerError>) {}
 
-                    match out {
-                        // Forward messages for the player
-                        Bar::Pause(p) => self.player.pause(p).into(),
-                        Bar::Seek(d) => self.player.seek(d).into(),
-                        Bar::Next => self.player.next().into(),
-                        Bar::Previous => self.player.previous().into(),
-                        Bar::Stop => self.player.stop().into(),
-                        Bar::Shuffle(s) => self.player.set_shuffle(s).into(),
-                        Bar::Repeat(r) => self.player.change_repeat_mode(r).into(),
-                        Bar::PlayRandom => Task::done(todo!("TODO:")),
-                        Bar::Volume(v) => self.player.volume(v).into(),
-                        // Forward change route (from clicking links)
-                        Bar::ChangeRoute(route) => self
-                            .router
-                            .update(router::Cmd::ChangeRoute(route))
-                            .map(Message::Router),
-                    }
+                    self.player_bar
+                        .update(playerbar::PlayerBarMsg::Out(out))
+                        .map(Message::PlayerBar)
                 }
             },
             Message::KeyboardEvent(event) => match event {
@@ -219,13 +192,31 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch([
-            keyboard::listen().map(Message::KeyboardEvent),
-            GenericPlayer::subscription().map(Message::Player),
-        ])
+        let wa = inventory::iter::<ReceiverContainer>;
+        let mut subscriptions: Vec<Subscription<Message>> =
+            wa.into_iter().map(|s| (s.0)()).collect();
+
+        subscriptions.extend([keyboard::listen().map(Message::KeyboardEvent)]);
+
+        Subscription::batch(subscriptions)
     }
 
     pub fn theme(&self) -> Option<Theme> {
         self.router.settings.theme.clone()
     }
 }
+
+pub struct ReceiverContainer(pub fn() -> iced::Subscription<Message>);
+
+/// Receive data via a global channel \
+/// This let's us sidestep the routing problem at the cost of
+/// intransparent data flows
+pub trait Receiver<LocalMsg> {
+    fn send(msg: impl Into<LocalMsg>);
+
+    fn receive() -> Subscription<LocalMsg>;
+
+    fn collect() -> Subscription<Message>;
+}
+
+inventory::collect!(ReceiverContainer);
