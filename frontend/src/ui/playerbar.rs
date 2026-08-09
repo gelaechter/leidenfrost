@@ -1,33 +1,34 @@
-use std::str::FromStr;
-
 use iced::{
     Element,
     Length::{self, Fill, FillPortion},
     Task, Theme,
     alignment::Horizontal,
     widget::{
-        self, Container, button, column,
+        self, Container, button,
         container::Style,
         row,
         text::{self, Wrapping},
     },
 };
-use url::Url;
+use macros::Receiver;
 
 use crate::ui::{
-    ICMsg, Receiver, ToCmdMsg, ToOutMsg, components::{
+    Receiver,
+    components::{
         icons,
-        style::{EM_DASH, muted_text},
+        style::{em_dash, muted_text},
         utils::{IntoLink, IntoLinks, format_duration},
-    }, player::{self, GenericPlayer}, router::Route,
+    },
+    player::{GenericPlayer, PlayerMsg},
+    router::{Route, Router, RouterMsg},
 };
 use backend::{
     data_view::TrackView,
-    db::models::{OrmUrl, Track},
     player::{PlayerEvent, RepeatMode},
 };
 
-#[derive(Default)]
+#[derive(Default, Receiver)]
+#[message(PlayerBarMsg)]
 pub struct PlayerBar {
     /// The currently playing track
     currently_playing: Option<TrackView>,
@@ -57,12 +58,14 @@ pub enum Cmd {
     /// The user stops seeking be letting go the slider
     FinishSeek(f64),
     /// The user moves the volume slider
-    Volume(u32),
+    VolumeChanged(u32),
+    /// Messages that signify that another components
+    Out(Notify),
 }
 
-// Messages meant to be passed upwards
+// Messages that notify other components
 #[derive(Clone, Debug)]
-pub enum Out {
+pub enum Notify {
     /// The user requests to pause/unpause the player
     Pause(bool),
     /// The user requests the next track
@@ -85,51 +88,25 @@ pub enum Out {
     ChangeRoute(Route),
 }
 
-pub type PlayerBarMsg = ICMsg<Cmd, Out>;
+impl From<Notify> for PlayerBarMsg {
+    fn from(value: Notify) -> Self {
+        Self::Out(value)
+    }
+}
+
+pub type PlayerBarMsg = Cmd;
 
 impl PlayerBar {
     /// Mutates the model whenever a message is dispatched
     pub fn update(&mut self, message: impl Into<PlayerBarMsg>) -> Task<PlayerBarMsg> {
-        let message = message.into();
-        if let PlayerBarMsg::Out(Out::PlayRandom) = message {
-            GenericPlayer::send(player::Cmd::Play(TrackView {
-                    track: Track {
-                        id: String::new(),
-                        endpoint_id: String::new(),
-                        album_id: String::new(),
-                        disc_number: 0,
-                        bit_rate: None,
-                        bpm: None,
-                        channels: None,
-                        container: None,
-                        duration: None,
-                        image_url: None,
-                        image_blur_hash: None,
-                        last_played_at: None,
-                        lyrics: None,
-                        title: None,
-                        file_path: None,
-                        play_count: None,
-                        release_date: None,
-                        file_size: None,
-                        stream_url: Some(Url::from_str("file:///mnt/NAS/Samuel/Music/flac/Flux Pavilion/I Can’t Stop/01 - I Can’t Stop.flac").unwrap().into()),
-                        track_number: Some(0),
-                        user_favorite: None,
-                    },
-                    artists: vec![],
-                    album_name: None,
-                    genres: vec![],
-                }));
-        }
-
-        // We only need to handle commands
-        message.cmd(|c| match c {
+        match message.into() {
             Cmd::Event(e) => {
                 match e {
                     PlayerEvent::Shutdown => todo!(),
                     PlayerEvent::Shuffle(shuffle) => self.shuffle = shuffle,
                     PlayerEvent::Repeat(repeat_mode) => self.repeat_mode = repeat_mode,
                     PlayerEvent::Pause(paused) => self.paused = paused,
+                    // Only update the current playback position if the user is not seeking
                     PlayerEvent::PlaybackPos(position) if !self.seeking => self.progress = position,
                     PlayerEvent::PlaybackPos(_) => {}
                     PlayerEvent::Duration(duration) => self.duration = duration,
@@ -138,10 +115,10 @@ impl PlayerBar {
                 }
                 Task::none()
             }
-            Cmd::Volume(vol) => {
+            Cmd::VolumeChanged(vol) => {
                 self.volume = vol;
                 // We need to emit the volume so the upper components can update
-                Task::done(Out::Volume(vol).out_msg())
+                Task::done(Cmd::Out(Notify::Volume(vol)))
             }
             Cmd::Seek(p) => {
                 self.seeking = true;
@@ -152,32 +129,50 @@ impl PlayerBar {
                 // Seeking is finished so we can reallow player updates
                 self.seeking = false;
                 // We need to emit the seek so the player can deal with it
-                Task::done(Out::Seek(p).out_msg())
+                Task::done(Cmd::Out(Notify::Seek(p)))
             }
-        })
+            Cmd::Out(notify_player) => {
+                match notify_player {
+                    Notify::Pause(b) => GenericPlayer::send(PlayerMsg::SetPaused(b)),
+                    Notify::Next => GenericPlayer::send(PlayerMsg::Next),
+                    Notify::Previous => GenericPlayer::send(PlayerMsg::Previous),
+                    Notify::Stop => GenericPlayer::send(PlayerMsg::Stop),
+                    Notify::Shuffle(b) => GenericPlayer::send(PlayerMsg::SetShuffle(b)),
+                    Notify::Repeat(r) => GenericPlayer::send(PlayerMsg::SetRepeatMode(r)),
+                    Notify::PlayRandom => todo!(),
+                    Notify::Seek(f) => GenericPlayer::send(PlayerMsg::Seek(f)),
+                    Notify::Volume(u) => GenericPlayer::send(PlayerMsg::Volume(u)),
+                    Notify::ChangeRoute(r) => Router::send(RouterMsg::ChangeRoute(r)),
+                };
+                Task::none()
+            }
+        }
     }
 
     /// Renders the model after each update
-    pub fn view(&self) -> Element<'_, ICMsg<Cmd, Out>> {
-        widget::container(row![
+    pub fn view(&self) -> Element<'_, PlayerBarMsg> {
+        widget::container(widget::row([
             // Left console
             self.left_console()
                 .align_left(FillPortion(1))
-                .center_y(Fill),
+                .center_y(Fill)
+                .into(),
             // Center console
-            widget::container(column![
+            widget::container(widget::column([
                 // Buttons (these emit messages for the player to deal with)
-                self.buttons().map(ToOutMsg::out_msg),
+                self.buttons().map(Cmd::Out),
                 // The progress bar (it only mutates internal state)
-                self.progress_bar().map(ToCmdMsg::cmd_msg),
-            ])
+                self.progress_bar(),
+            ]))
             .center_x(FillPortion(1))
-            .center_y(Fill),
+            .center_y(Fill)
+            .into(),
             // Right console
             self.right_console()
                 .align_right(FillPortion(1))
-                .center_y(Fill),
-        ])
+                .center_y(Fill)
+                .into(),
+        ]))
         .padding(10)
         .center_x(Fill)
         .center_y(86)
@@ -209,7 +204,7 @@ impl PlayerBar {
         .into()
     }
 
-    fn buttons(&self) -> Element<'_, Out> {
+    fn buttons(&self) -> Element<'_, Notify> {
         const BUTTON_SIZE: u32 = 20;
 
         let stop_button = player_button(icons::square().size(BUTTON_SIZE));
@@ -221,20 +216,20 @@ impl PlayerBar {
                 })
                 .size(BUTTON_SIZE),
         )
-        .on_press(Out::Shuffle(!self.shuffle));
+        .on_press(Notify::Shuffle(!self.shuffle));
 
         let skip_back_button =
-            player_button(icons::skip_back().size(BUTTON_SIZE)).on_press(Out::Previous);
+            player_button(icons::skip_back().size(BUTTON_SIZE)).on_press(Notify::Previous);
 
         let pause_button = player_button(if self.paused {
             icons::play().size(BUTTON_SIZE)
         } else {
             icons::pause().size(BUTTON_SIZE)
         })
-        .on_press(Out::Pause(!self.paused));
+        .on_press(Notify::Pause(!self.paused));
 
         let skip_forward_button =
-            player_button(icons::skip_forward().size(BUTTON_SIZE)).on_press(Out::Next);
+            player_button(icons::skip_forward().size(BUTTON_SIZE)).on_press(Notify::Next);
 
         let repeat_button = player_button(
             match self.repeat_mode {
@@ -248,7 +243,7 @@ impl PlayerBar {
             }
             .size(BUTTON_SIZE),
         )
-        .on_press(Out::Repeat(match self.repeat_mode {
+        .on_press(Notify::Repeat(match self.repeat_mode {
             // Cycle repeat mode
             RepeatMode::None => RepeatMode::Queue,
             RepeatMode::Queue => RepeatMode::Song,
@@ -256,7 +251,7 @@ impl PlayerBar {
         }));
 
         let play_random_button =
-            player_button(icons::dices().size(BUTTON_SIZE)).on_press(Out::PlayRandom);
+            player_button(icons::dices().size(BUTTON_SIZE)).on_press(Notify::PlayRandom);
 
         // Button container
         widget::container(row![
@@ -273,7 +268,7 @@ impl PlayerBar {
         .into()
     }
 
-    fn right_console(&self) -> Container<'_, ICMsg<Cmd, Out>> {
+    fn right_console(&self) -> Container<'_, PlayerBarMsg> {
         let mute_button = match self.volume {
             0 => icons::volume(),
             1..50 => icons::volume_one(),
@@ -285,24 +280,26 @@ impl PlayerBar {
             // Mute icon
             mute_button,
             // Volume slider
-            iced::widget::slider(0..=100_u32, self.volume, |v| { Out::Volume(v).out_msg() })
-                .width(100),
+            iced::widget::slider(0..=100_u32, self.volume, |v| {
+                Cmd::Out(Notify::Volume(v))
+            })
+            .width(100),
         ])
     }
 
-    fn left_console(&self) -> Container<'_, ICMsg<Cmd, Out>> {
+    fn left_console(&self) -> Container<'_, PlayerBarMsg> {
         widget::container(widget::column([
             // Track title
-            self.track_title().map(ToOutMsg::out_msg),
+            self.track_title(),
             // Artist
-            self.artists().map(ToOutMsg::out_msg),
+            self.artists().map(Cmd::Out),
             // Album Name
-            self.album_name().map(ToOutMsg::out_msg),
+            self.album_name().map(Cmd::Out),
         ]))
     }
 
     /// Displays the track title as part of the left console
-    fn track_title(&self) -> Element<'_, Out> {
+    fn track_title(&self) -> Element<'_, PlayerBarMsg> {
         widget::text(
             self.currently_playing
                 .as_ref()
@@ -314,7 +311,7 @@ impl PlayerBar {
 
     /// Displays the artists with a link to each of them as part of the left
     /// console
-    fn artists(&self) -> Element<'_, Out> {
+    fn artists(&self) -> Element<'_, Notify> {
         self.currently_playing
             .as_ref()
             .map(|t: &TrackView| {
@@ -323,11 +320,11 @@ impl PlayerBar {
                     .into_links(
                         |artist| {
                             (
-                                artist.name.clone().unwrap_or(EM_DASH()),
+                                artist.name.clone().unwrap_or(em_dash()),
                                 Route::Artist(artist.id.clone()),
                             )
                         },
-                        Out::ChangeRoute,
+                        Notify::ChangeRoute,
                     )
                     .style(muted_text)
                     .wrapping(Wrapping::None)
@@ -339,14 +336,14 @@ impl PlayerBar {
 
     /// Displays the album name with a link to the album as part of the left
     /// console
-    fn album_name(&self) -> Element<'_, Out> {
+    fn album_name(&self) -> Element<'_, Notify> {
         self.currently_playing
             .as_ref()
             .map(|t| {
                 t.album_name
                     .clone()
-                    .unwrap_or(EM_DASH())
-                    .link(Route::Album(t.track.id.clone()), Out::ChangeRoute)
+                    .unwrap_or(em_dash())
+                    .link(Route::Album(t.track.id.clone()), Notify::ChangeRoute)
                     .style(muted_text)
                     .wrapping(Wrapping::None)
                     .ellipsis(text::Ellipsis::End)
@@ -356,6 +353,6 @@ impl PlayerBar {
     }
 }
 
-fn player_button<'a>(content: impl Into<Element<'a, Out>>) -> widget::Button<'a, Out> {
+fn player_button<'a>(content: impl Into<Element<'a, Notify>>) -> widget::Button<'a, Notify> {
     widget::button(content).style(button::text)
 }

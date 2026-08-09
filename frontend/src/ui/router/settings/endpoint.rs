@@ -19,9 +19,7 @@ use backend::api::{
     jellyfin::{api::JellyfinApi, errors::ApiError},
 };
 
-use crate::ui::{
-    ICMsg, ToCmdMsg, ToOutMsg, components::icons, router::settings::endpoint::Out::RemoveEndpoint,
-};
+use crate::ui::{Receiver, components::icons};
 
 /// The settings for an endpoint
 #[derive(Clone)]
@@ -71,7 +69,7 @@ impl Default for EndpointSettings {
     }
 }
 
-pub type EndpointMsg = ICMsg<Cmd, Out>;
+pub type EndpointMsg = Cmd;
 
 #[derive(Clone, Debug)]
 pub enum Cmd {
@@ -84,13 +82,8 @@ pub enum Cmd {
     ChangeUsername(String),
     ChangePassword(String),
     TestEndpoint,
-    TestRes(Result<EndpointKind, Error>),
-}
-
-#[derive(Debug, Clone)]
-pub enum Out {
-    SyncEndpoints,
-    RemoveEndpoint,
+    TestResult(Result<EndpointKind, Error>),
+    RemoveSelf,
 }
 
 const SCROLL_DOWN_ICON: char = '\u{e803}';
@@ -105,11 +98,7 @@ impl EndpointSettings {
         let header_row = widget::row([
             // Checkbox for endpoint selection
             widget::checkbox(self.selected)
-                .on_toggle_maybe(
-                    self.endpoint
-                        .as_ref()
-                        .map(|_| |b| Cmd::ToggleSelected(b).cmd_msg()),
-                )
+                .on_toggle_maybe(self.endpoint.as_ref().map(|_| |b| Cmd::ToggleSelected(b)))
                 .text_size(HEADER_CONTROL_SIZE)
                 .into(),
             // The endpoint icon
@@ -124,7 +113,7 @@ impl EndpointSettings {
             } else {
                 widget::text!("{}", SCROLL_RIGHT_ICON).font("Iced-Icons")
             })
-            .on_press(Cmd::ToggleExpand.cmd_msg())
+            .on_press(Cmd::ToggleExpand)
             .into(),
         ])
         .spacing(6)
@@ -134,7 +123,7 @@ impl EndpointSettings {
         let name_row = widget::row([
             widget::text("Name").width(Length::FillPortion(1)).into(),
             widget::text_input("Name", &self.name)
-                .on_input(|s| Cmd::ChangeName(s).cmd_msg())
+                .on_input(Cmd::ChangeName)
                 .width(Length::FillPortion(2))
                 .into(),
         ])
@@ -148,7 +137,7 @@ impl EndpointSettings {
                 EndpointType::ALL,
                 EndpointType::to_string,
             )
-            .on_select(|t| Cmd::ChooseEndpoint(t).cmd_msg())
+            .on_select(Cmd::ChooseEndpoint)
             .width(Length::FillPortion(2))
             .into(),
         ])
@@ -158,7 +147,7 @@ impl EndpointSettings {
         let url_row = widget::row([
             widget::text("Url").width(Length::FillPortion(1)).into(),
             widget::text_input("Url", &self.url)
-                .on_input(|s| Cmd::ChangeUrl(s).cmd_msg())
+                .on_input(Cmd::ChangeUrl)
                 .width(Length::FillPortion(2))
                 .into(),
         ])
@@ -170,7 +159,7 @@ impl EndpointSettings {
                 .width(Length::FillPortion(1))
                 .into(),
             widget::text_input("Username", &self.username)
-                .on_input(|s| Cmd::ChangeUsername(s).cmd_msg())
+                .on_input(Cmd::ChangeUsername)
                 .width(Length::FillPortion(2))
                 .into(),
         ])
@@ -187,7 +176,7 @@ impl EndpointSettings {
                 &self.password,
             )
             .secure(true)
-            .on_input(|s| Cmd::ChangePassword(s).cmd_msg())
+            .on_input(Cmd::ChangePassword)
             .width(Length::FillPortion(2))
             .into(),
         ])
@@ -199,7 +188,7 @@ impl EndpointSettings {
                 .width(Length::FillPortion(1))
                 .into(),
             widget::checkbox(self.index)
-                .on_toggle(|b| Cmd::ToggleIndexing(b).cmd_msg())
+                .on_toggle(Cmd::ToggleIndexing)
                 .width(Length::FillPortion(2))
                 .into(),
         ]);
@@ -223,17 +212,13 @@ impl EndpointSettings {
         // Lets the user test and save
         let test_save_row = widget::row([
             widget::button("Test")
-                .on_press_maybe(
-                    self.endpoint_type
-                        .is_some()
-                        .then_some(Cmd::TestEndpoint.cmd_msg()),
-                )
+                .on_press_maybe(self.endpoint_type.is_some().then_some(Cmd::TestEndpoint))
                 .into(),
             test_error_text.into(),
             space().width(Length::Fill).into(),
             widget::button(icons::trash())
                 .style(button::danger)
-                .on_press(RemoveEndpoint.out_msg())
+                .on_press(Cmd::RemoveSelf)
                 .into(),
         ])
         .spacing(6)
@@ -267,7 +252,7 @@ impl EndpointSettings {
     }
 
     pub fn update(&mut self, msg: impl Into<EndpointMsg>) -> Task<EndpointMsg> {
-        msg.into().cmd(|cmd| match cmd {
+        match msg.into() {
             Cmd::ToggleExpand => {
                 self.expanded = !self.expanded;
                 Task::none()
@@ -275,12 +260,14 @@ impl EndpointSettings {
             Cmd::ToggleSelected(selected) => {
                 self.selected = selected;
                 // Signal the upper settings to apply changes to the endpoints
-                Task::done(Out::SyncEndpoints.out_msg())
+                super::Settings::send(super::SettingsMsg::SyncEndpoints);
+                Task::none()
             }
             Cmd::ToggleIndexing(index) => {
                 self.index = index;
                 // Signal the upper settings to apply changes to the endpoints
-                Task::done(Out::SyncEndpoints.out_msg())
+                super::Settings::send(super::SettingsMsg::SyncEndpoints);
+                Task::none()
             }
             Cmd::ChangeName(name) => {
                 self.name = name;
@@ -331,7 +318,7 @@ impl EndpointSettings {
                                 endpoint: Arc::new(jf),
                             })
                         })(),
-                        |res| Cmd::TestRes(res).cmd_msg(),
+                        Cmd::TestResult,
                     )
                 }
                 None => {
@@ -340,14 +327,18 @@ impl EndpointSettings {
                     Task::none()
                 }
             },
-            Cmd::TestRes(res) => {
+            Cmd::TestResult(res) => {
                 match res {
                     Ok(api) => self.endpoint = Some(api),
                     Err(e) => self.error = Some(e),
                 }
                 Task::none()
             }
-        })
+            Cmd::RemoveSelf => {
+                super::Settings::send(super::SettingsMsg::RemoveEndpoint(self.id));
+                Task::none()
+            }
+        }
     }
 
     pub fn icon(&self) -> Text<'_> {

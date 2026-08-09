@@ -4,33 +4,46 @@
 
 use std::sync::LazyLock;
 
+use iced::Subscription;
 use iced::futures::Stream;
-use iced::{Subscription, Task};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 
 use backend::{
     data_view::TrackView,
-    player::{Player, PlayerError, PlayerEvent, mpv_player::MpvPlayer},
+    player::{Player, PlayerEvent, RepeatMode, mpv_player::MpvPlayer},
 };
 
-use crate::ui::{ICMsg, Receiver, ReceiverContainer, ToOutMsg};
+use crate::ui::{
+    Receiver,
+    playerbar::{PlayerBar, PlayerBarMsg},
+};
 
 use macros::Receiver;
 
 #[derive(Clone, Debug)]
 pub enum Cmd {
     /// An Event received from the player
-    /// this needs to be converted to an [`Out`] for public consumption
     Event(PlayerEvent),
-    ///
+    SetPaused(bool),
+    Seek(f64),
+    Stop,
     Play(TrackView),
-}
-
-#[derive(Clone, Debug)]
-pub enum Out {
-    Event(PlayerEvent),
-    Queue(Box<QueueEvent>),
+    PlayAll(Vec<TrackView>),
+    PlayIndex(usize),
+    Append(TrackView),
+    AppendAll(Vec<TrackView>),
+    QueueRemove(usize),
+    QueueMove {
+        target: usize,
+        position: usize,
+    },
+    SetShuffle(bool),
+    SetRepeatMode(RepeatMode),
+    Next,
+    Previous,
+    /// Sets the volume in percent
+    Volume(u32),
 }
 
 /// An event emitted to the queue to display the data
@@ -40,7 +53,7 @@ pub enum QueueEvent {
     Append(TrackView),
 }
 
-pub type PlayerMsg = ICMsg<Cmd, Out, PlayerError>;
+pub type PlayerMsg = Cmd;
 
 static PLAYER_EVENT_CHANNEL: LazyLock<broadcast::Sender<PlayerEvent>> =
     LazyLock::new(|| broadcast::channel(128).0);
@@ -68,7 +81,7 @@ impl Default for GenericPlayer {
     /// By default uses the MPV Player backend
     fn default() -> Self {
         let player = MpvPlayer::new(|event| {
-            PLAYER_EVENT_CHANNEL.send(event);
+            PLAYER_EVENT_CHANNEL.send(event).unwrap();
         })
         .expect("Error during player construction");
 
@@ -78,19 +91,35 @@ impl Default for GenericPlayer {
 }
 
 impl GenericPlayer {
-    pub fn update(&mut self, message: impl Into<PlayerMsg>) -> Task<PlayerMsg> {
-        // Only commands need to be handled
-        let icmsg = message.into();
-        icmsg.cmd(|c| {
-            match c {
-                // Handle the events emitted from [`Self::subscription`]
-                Cmd::Event(event) => Task::done(Out::Event(event).out_msg()),
-                Cmd::Play(track_view) => {
-                    self.play(track_view).unwrap();
-                    Task::none()
-                },
+    pub fn update(&mut self, message: impl Into<PlayerMsg>) {
+        let player = self.player_impl.inner();
+
+        // TODO: error handling
+        let res = match message.into() {
+            // Handle the events emitted from [`Self::subscription`]
+            Cmd::Event(event) => {
+                PlayerBar::send(PlayerBarMsg::Event(event));
+                Ok(())
             }
-        })
+            Cmd::Play(track_view) => {
+                log::debug!("Calling player.play");
+                player.play(&track_view)
+            },
+            Cmd::SetPaused(paused) => player.pause(paused),
+            Cmd::Seek(position) => player.seek(position),
+            Cmd::Stop => player.stop(),
+            Cmd::PlayAll(track_views) => player.play_all(&track_views),
+            Cmd::PlayIndex(index) => player.play_index(index),
+            Cmd::Append(track_view) => player.append(&track_view),
+            Cmd::AppendAll(track_views) => player.append_all(&track_views),
+            Cmd::QueueRemove(index) => player.queue_remove(index),
+            Cmd::QueueMove { target, position } => player.queue_move(target, position),
+            Cmd::SetShuffle(b) => player.set_shuffle(b),
+            Cmd::SetRepeatMode(repeat_mode) => player.set_repeat_mode(repeat_mode),
+            Cmd::Next => player.next(),
+            Cmd::Previous => player.previous(),
+            Cmd::Volume(percentage) => player.volume(percentage),
+        };
     }
 
     /// Subscribes to the player events
@@ -103,63 +132,5 @@ impl GenericPlayer {
         }
 
         Subscription::run(subscribe_player_events).map(|m| Cmd::Event(m).into())
-    }
-}
-
-impl GenericPlayer {
-    fn seek(&self, position: f64) -> backend::player::Result<()> {
-        self.player_impl.inner().seek(position)
-    }
-
-    fn stop(&self) -> backend::player::Result<()> {
-        self.player_impl.inner().stop()
-    }
-
-    fn play(&self, track: TrackView) -> backend::player::Result<()> {
-        self.player_impl.inner().play(track)
-    }
-
-    fn play_all(&self, tracks: Vec<TrackView>) -> backend::player::Result<()> {
-        self.player_impl.inner().play_all(tracks)
-    }
-
-    fn play_index(&self, index: usize) -> backend::player::Result<()> {
-        self.player_impl.inner().play_index(index)
-    }
-
-    fn append(&self, track: TrackView) -> backend::player::Result<()> {
-        self.player_impl.inner().append(track)
-    }
-
-    fn append_all(&self, tracks: Vec<TrackView>) -> backend::player::Result<()> {
-        self.player_impl.inner().append_all(tracks)
-    }
-
-    fn queue_remove(&self, index: usize) -> backend::player::Result<()> {
-        self.player_impl.inner().queue_remove(index)
-    }
-
-    fn queue_move(&self, target: usize, position: usize) -> backend::player::Result<()> {
-        self.player_impl.inner().queue_move(target, position)
-    }
-
-    fn set_shuffle(&self, shuffle: bool) -> backend::player::Result<()> {
-        self.player_impl.inner().set_shuffle(shuffle)
-    }
-
-    fn change_repeat_mode(&self, mode: backend::player::RepeatMode) -> backend::player::Result<()> {
-        self.player_impl.inner().change_repeat_mode(mode)
-    }
-
-    fn next(&self) -> backend::player::Result<()> {
-        self.player_impl.inner().next()
-    }
-
-    fn previous(&self) -> backend::player::Result<()> {
-        self.player_impl.inner().previous()
-    }
-
-    fn volume(&self, percentage: u32) -> backend::player::Result<()> {
-        self.player_impl.inner().volume(percentage)
     }
 }

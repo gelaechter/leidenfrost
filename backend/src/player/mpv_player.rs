@@ -168,7 +168,8 @@ impl Player for MpvPlayer {
         self.0.command(STOP, &[]).map_err(Into::into)
     }
 
-    fn play(&self, view: TrackView) -> Result<()> {
+    fn play(&self, view: &TrackView) -> Result<()> {
+        log::debug!("Trackview: {view:?}");
         let url = try_track_url(view)?;
 
         self.0
@@ -176,10 +177,10 @@ impl Player for MpvPlayer {
             .map_err(Into::into)
     }
 
-    fn play_all(&self, views: Vec<TrackView>) -> Result<()> {
+    fn play_all(&self, views: &[TrackView]) -> Result<()> {
         // Try to play all and return errors for all the unsuccessful queue adds
         // TODO: This iterative approach might get real slow if we have HUGE queues
-        for (idx, view) in views.into_iter().enumerate() {
+        for (idx, view) in views.iter().enumerate() {
             // Play the first append the others
             if idx == 0 {
                 self.play(view)?;
@@ -197,7 +198,7 @@ impl Player for MpvPlayer {
             .map_err(Into::into)
     }
 
-    fn append(&self, view: TrackView) -> Result<()> {
+    fn append(&self, view: &TrackView) -> Result<()> {
         let url = try_track_url(view)?;
 
         self.0
@@ -205,7 +206,7 @@ impl Player for MpvPlayer {
             .map_err(Into::into)
     }
 
-    fn append_all(&self, tracks: Vec<TrackView>) -> Result<()> {
+    fn append_all(&self, tracks: &[TrackView]) -> Result<()> {
         for track in tracks {
             self.append(track)?;
         }
@@ -229,7 +230,7 @@ impl Player for MpvPlayer {
         self.0.set_property(SHUFFLE, shuffle).map_err(Into::into)
     }
 
-    fn change_repeat_mode(&self, mode: RepeatMode) -> Result<()> {
+    fn set_repeat_mode(&self, mode: RepeatMode) -> Result<()> {
         let (loop_file, loop_playlist) = match mode {
             RepeatMode::None => ("no", "no"),
             RepeatMode::Song => ("inf", "no"),
@@ -264,7 +265,7 @@ impl From<libmpv2::Error> for PlayerError {
     }
 }
 
-fn try_track_url(track_view: TrackView) -> Result<OrmUrl> {
+fn try_track_url(track_view: &TrackView) -> Result<OrmUrl> {
     if let TrackView {
         track: Track {
             stream_url: Some(url),
@@ -273,8 +274,8 @@ fn try_track_url(track_view: TrackView) -> Result<OrmUrl> {
         ..
     } = track_view
     {
-        Ok(url)
+        Ok(url.clone())
     } else {
-        Err(PlayerError::NoStream(Box::new(track_view)))
+        Err(PlayerError::NoStream(Box::new(track_view.clone())))
     }
 }

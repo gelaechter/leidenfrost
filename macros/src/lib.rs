@@ -1,3 +1,15 @@
+//! This module implements the proc_macro_derive for the Receiver
+//!
+//! The idea is that we can automatically generate a publich broadcast for each
+//! receiver and expose that broadcast through an associated `send` function.
+//!
+//! Each message we receive on that broadcast can then be received through
+//! subscribing, i.e. the associated `receive` function.
+//!
+//! To automatically register all receivers so we can send to them from anywhere
+//! at any time we use dtolnay's inventory crate. The registered subscriptions
+//! are then activated in [`frontend::ui::app`].
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Attribute, DeriveInput, parse_macro_input};
@@ -14,8 +26,13 @@ pub fn derive_receiver_fn(input: TokenStream) -> TokenStream {
 
     // Find the message attribute
     let message_type = message_attr
-        .map(|a| a.parse_args::<syn::Path>().expect("expected a path like PlayerMsg"))
-        .expect("You need to provide the message type through an attribute, e.g. #[message(PlayerMsg)]");
+        .map(|a| {
+            a.parse_args::<syn::Path>()
+                .expect("expected a path like PlayerMsg")
+        })
+        .expect(
+            "You need to provide the message type through an attribute, e.g. #[message(PlayerMsg)]",
+        );
 
     // Expand
     let expanded = quote! {
@@ -24,6 +41,7 @@ pub fn derive_receiver_fn(input: TokenStream) -> TokenStream {
 
         #[automatically_derived]
         impl Receiver<#message_type> for #name {
+            // Convert the message and send it into the global channel
             fn send(msg: impl Into<#message_type>) {
                 let message = msg.into();
                 __RECEIVER_CHANNEL.send(message).unwrap();
@@ -41,13 +59,13 @@ pub fn derive_receiver_fn(input: TokenStream) -> TokenStream {
                 iced::Subscription::run(subscribe_global_events)
             }
 
-            fn collect() -> iced::Subscription<super::app::Message> {
+            fn collect() -> iced::Subscription<crate::ui::app::Message> {
                 Self::receive().map(Into::into)
             }
         }
 
         ::inventory::submit! {
-            ReceiverContainer(#name::collect)
+            crate::ui::ReceiverContainer(#name::collect)
         }
     };
 

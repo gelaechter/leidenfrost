@@ -1,7 +1,5 @@
 pub mod mpv_player;
 
-use tokio::sync::broadcast;
-
 use crate::data_view::TrackView;
 
 #[derive(Default, Clone, Debug)]
@@ -23,7 +21,7 @@ pub enum PlayerState {
     Paused,
 }
 
-/// Events emitted by a player to
+/// Events emitted by the player backend
 #[derive(Clone, Debug)]
 pub enum PlayerEvent {
     /// The player instance has shut down
@@ -32,7 +30,7 @@ pub enum PlayerEvent {
     Shuffle(bool),
     /// The repeat mode has changed
     Repeat(RepeatMode),
-    ///
+    /// The player pause state has changed
     Pause(bool),
     /// The playback position in seconds
     PlaybackPos(f64),
@@ -69,13 +67,13 @@ pub trait Player: Sized {
     /// Stop playback and clear playlist.
     fn stop(&self) -> Result<()>;
     /// Plays a track, should return an `Out::Queue` task
-    fn play(&self, track: TrackView) -> Result<()>;
+    fn play(&self, track: &TrackView) -> Result<()>;
     /// Adds multiple tracks and plays the first
-    fn play_all(&self, tracks: Vec<TrackView>) -> Result<()>;
+    fn play_all(&self, tracks: &[TrackView]) -> Result<()>;
     /// Plays a certain index in the queue
     fn play_index(&self, index: usize) -> Result<()>;
-    fn append(&self, track: TrackView) -> Result<()>;
-    fn append_all(&self, tracks: Vec<TrackView>) -> Result<()>;
+    fn append(&self, track: &TrackView) -> Result<()>;
+    fn append_all(&self, tracks: &[TrackView]) -> Result<()>;
     /// Remove a track from the queue
     fn queue_remove(&self, index: usize) -> Result<()>;
     /// Move a track in the queue
@@ -84,7 +82,7 @@ pub trait Player: Sized {
     fn queue_move(&self, target: usize, position: usize) -> Result<()>;
     fn set_shuffle(&self, shuffle: bool) -> Result<()>;
     /// Changes the repeat mode of the player
-    fn change_repeat_mode(&self, mode: RepeatMode) -> Result<()>;
+    fn set_repeat_mode(&self, mode: RepeatMode) -> Result<()>;
     /// Plays the next song
     fn next(&self) -> Result<()>;
     /// Plays the previous song

@@ -15,12 +15,13 @@ use iced::{
 };
 
 use backend::{
-    api::endpoint_api::{EndpointManager, GetPlaylistsParams, MusicEndpoint},
+    api::endpoint_api::{EndpointManager, GetPlaylistsParams},
     data_view::PlaylistView,
 };
+use macros::Receiver;
 
 use crate::ui::{
-    ICMsg, ToCmdMsg, ToOutMsg,
+    Receiver,
     components::{
         icons,
         image::{self, Image},
@@ -28,7 +29,8 @@ use crate::ui::{
     router::Route,
 };
 
-#[derive(Default)]
+#[derive(Default, Receiver)]
+#[message(SidebarMsg)]
 pub struct Sidebar {
     route: Route,
     playlists: Vec<PlaylistView>,
@@ -42,14 +44,11 @@ pub enum Cmd {
     ImageDriver(image::Message),
     /// The route has changed
     RouteChanged(Route),
+    /// Updates the route by notifying th router
+    NotifyRouter(Route),
 }
 
-#[derive(Clone, Debug)]
-pub enum Out {
-    UpdateRoute(Route),
-}
-
-pub type SidebarMsg = ICMsg<Cmd, Out>;
+pub type SidebarMsg = Cmd;
 
 impl Sidebar {
     pub fn view(&self) -> Element<'_, SidebarMsg> {
@@ -87,46 +86,48 @@ impl Sidebar {
     }
 
     pub fn update(&mut self, message: impl Into<SidebarMsg>) -> Task<SidebarMsg> {
-        message.into().cmd(|cmd| {
-            let task: Task<SidebarMsg> = match cmd {
-                Cmd::FetchPlaylists => {
-                    // Only fetch first time
-                    if !self.playlists.is_empty() {
-                        return Task::none();
-                    }
-
-                    Task::perform(
-                        async {
-                            // TODO: Replace with global state
-                            let endpoint = EndpointManager::get_active_endpoint().await.unwrap();
-
-                            endpoint
-                                .get_playlists(GetPlaylistsParams::default())
-                                .await
-                                .unwrap()
-                        },
-                        |p| Cmd::PlaylistsFetched(p).into(),
-                    )
+        match message.into() {
+            Cmd::FetchPlaylists => {
+                // Only fetch first time
+                if !self.playlists.is_empty() {
+                    return Task::none();
                 }
-                Cmd::PlaylistsFetched(playlist_views) => {
-                    // Load images
-                    self.images.insert(playlist_views.iter().filter_map(|view| {
-                        let url = view.playlist.image_url.clone();
-                        let blurhash = view.playlist.image_blur_hash.clone();
-                        url.map(|url| Image::new(url).blurhash_maybe(blurhash))
-                    }));
 
-                    self.playlists = playlist_views;
-                    Task::none()
-                }
-                Cmd::ImageDriver(m) => self.images.update(m).map(|m| Cmd::ImageDriver(m).cmd_msg()),
-                Cmd::RouteChanged(route) => {
-                    self.route = route;
-                    Task::none()
-                }
-            };
-            task
-        })
+                Task::perform(
+                    async {
+                        // TODO: Replace with global state
+                        let endpoint = EndpointManager::get_active_endpoint().await.unwrap();
+
+                        endpoint
+                            .get_playlists(GetPlaylistsParams::default())
+                            .await
+                            .unwrap()
+                    },
+                    Cmd::PlaylistsFetched,
+                )
+            }
+            Cmd::PlaylistsFetched(playlist_views) => {
+                // Load images
+                self.images.insert(playlist_views.iter().filter_map(|view| {
+                    let url = view.playlist.image_url.clone();
+                    let blurhash = view.playlist.image_blur_hash.clone();
+                    url.map(|url| Image::new(url).blurhash_maybe(blurhash))
+                }));
+
+                self.playlists = playlist_views;
+                Task::none()
+            }
+            Cmd::ImageDriver(m) => self.images.update(m).map(Cmd::ImageDriver),
+            Cmd::RouteChanged(route) => {
+                self.route = route;
+                Task::none()
+            }
+            Cmd::NotifyRouter(route) => {
+                use super::router;
+                router::Router::send(router::RouterMsg::ChangeRoute(route));
+                Task::none()
+            }
+        }
     }
 
     /// The tab select of the sidebar
@@ -143,7 +144,7 @@ impl Sidebar {
             ]
             .spacing(8),
         )
-        .on_press(Out::UpdateRoute(route.clone()).out_msg())
+        .on_press(Cmd::NotifyRouter(route.clone()))
         .style(move |theme, status| {
             let palette = theme.palette();
             button::Style {
@@ -174,7 +175,7 @@ impl Sidebar {
                 && let Some(image) = self.images.view(image_url)
             {
                 // Show an image if it's ready
-                image.map(|m| Cmd::ImageDriver(m).cmd_msg())
+                image.map(Cmd::ImageDriver)
             } else {
                 // Or show a placeholder
                 icons::disc().size(18).into()
@@ -196,7 +197,7 @@ impl Sidebar {
 
         let playlists = widget::column(playlists);
         widget::sensor(playlists)
-            .on_show(|_| Cmd::FetchPlaylists.cmd_msg())
+            .on_show(|_| Cmd::FetchPlaylists)
             .into()
     }
 }

@@ -1,32 +1,32 @@
-use std::sync::Arc;
-
 use iced::{
     Element, Task,
-    wgpu::hal::Api,
     widget::{self, column},
 };
 
 use backend::{
     api::{
-        endpoint_api::{EndpointManager, GetTracksParams, MusicEndpoint, Pagination},
+        endpoint_api::{EndpointManager, GetTracksParams, Pagination},
         jellyfin::errors::ApiError,
     },
     data_view::TrackView,
 };
 
 use crate::ui::{
-    ICMsg, ToCmdMsg, ToErrMsg,
+    Receiver,
     components::{
         style::default_header,
         table::{self},
         track_table::{self, TrackCellMsg, TrackRow, TrackTable, TrackTableMsg},
     },
+    player::{GenericPlayer, PlayerMsg},
 };
 
 /// The tracks route
 pub struct Tracks {
     /// The tracks as displayed in the table
     track_table: TrackTable,
+    /// An error display
+    error: Option<ApiError>,
 }
 
 impl Default for Tracks {
@@ -36,9 +36,16 @@ impl Default for Tracks {
             .add_column(track_table::combined_title_column())
             .add_column(track_table::album_column())
             .add_column(track_table::duration_column())
-            .add_column(track_table::genre_column());
+            .add_column(track_table::genre_column())
+            .on_double_click_row(|track| {
+                log::debug!("Playing track by double click");
+                GenericPlayer::send(PlayerMsg::Play(track.view));
+            });
 
-        Self { track_table }
+        Self {
+            track_table,
+            error: None,
+        }
     }
 }
 
@@ -67,27 +74,27 @@ pub enum Out {
     },
 }
 
-pub type TracksMsg = ICMsg<Cmd, Out, ApiError>;
+pub type TracksMsg = Cmd;
 
 impl Tracks {
     pub fn view(&self) -> Element<'_, TracksMsg> {
-        let header = default_header("Tracks", Cmd::PlayAllTracks.cmd_msg());
+        let header = default_header("Tracks", Cmd::PlayAllTracks);
 
         let tracks = column![
             header,
             self.track_table
                 .view()
-                .map(|c| Cmd::TableDriver(Box::new(c)).cmd_msg())
+                .map(|c| Cmd::TableDriver(Box::new(c)))
         ];
 
         widget::sensor(tracks)
-            .on_show(|_| Cmd::FetchTracks.cmd_msg())
+            .on_show(|_| Cmd::FetchTracks)
             .key("tracks")
             .into()
     }
 
     pub fn update(&mut self, message: impl Into<TracksMsg>) -> Task<TracksMsg> {
-        message.into().cmd(|cmd| match cmd {
+        match message.into() {
             Cmd::FetchTracks => {
                 // Only fetch first time
                 if !self.track_table.rows().is_empty() {
@@ -106,13 +113,11 @@ impl Tracks {
                                 }),
                                 sorting: None,
                             })
+                            // TODO: error handling
                             .await
+                            .unwrap()
                     },
-                    // TODO: There is probably a better way to do this
-                    |r| match r {
-                        Ok(tracks) => Cmd::TracksFetched(tracks).cmd_msg(),
-                        Err(e) => e.err_msg(),
-                    },
+                    Cmd::TracksFetched,
                 )
             }
             Cmd::TracksFetched(tracks) => {
@@ -124,11 +129,9 @@ impl Tracks {
                             tracks.into_iter().map(TrackRow::from).collect()
                         })
                         .await
+                        .unwrap()
                     },
-                    |result| match result {
-                        Ok(r) => Cmd::RowsCreated(r).cmd_msg(),
-                        Err(e) => ApiError::JoinError.err_msg(),
-                    },
+                    Cmd::RowsCreated,
                 )
             }
             Cmd::RowsCreated(row_data) => {
@@ -139,8 +142,8 @@ impl Tracks {
             Cmd::TableDriver(m) => self
                 .track_table
                 .update(*m)
-                .map(|c| Cmd::TableDriver(Box::new(c)).cmd_msg()),
+                .map(|c| Cmd::TableDriver(Box::new(c))),
             Cmd::PlayAllTracks => Task::none(),
-        })
+        }
     }
 }
