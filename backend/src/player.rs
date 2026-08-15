@@ -38,7 +38,7 @@ pub enum PlayerEvent {
     ///
     /// This might seem obsolete since the application should know the duration
     /// through the queue and the currently playing [`TrackView`], but we treat
-    /// the player as our source of truth, in case the Metadata and actual file
+    /// the player as our source of truth in case the Metadata and actual file
     /// don't match.
     Duration(f64),
     /// The volume (0 to 100) has changed

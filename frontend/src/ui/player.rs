@@ -17,6 +17,7 @@ use backend::{
 use crate::ui::{
     Receiver,
     playerbar::{PlayerBar, PlayerBarMsg},
+    queue::{Queue, QueueMsg},
 };
 
 use macros::Receiver;
@@ -102,22 +103,55 @@ impl GenericPlayer {
                 Ok(())
             }
             Cmd::Play(track_view) => {
-                log::debug!("Calling player.play");
-                player.play(&track_view)
-            },
+                player.play(&track_view).unwrap();
+                Queue::send(QueueMsg::Play(track_view));
+                Ok(())
+            }
             Cmd::SetPaused(paused) => player.pause(paused),
             Cmd::Seek(position) => player.seek(position),
             Cmd::Stop => player.stop(),
-            Cmd::PlayAll(track_views) => player.play_all(&track_views),
-            Cmd::PlayIndex(index) => player.play_index(index),
-            Cmd::Append(track_view) => player.append(&track_view),
-            Cmd::AppendAll(track_views) => player.append_all(&track_views),
-            Cmd::QueueRemove(index) => player.queue_remove(index),
-            Cmd::QueueMove { target, position } => player.queue_move(target, position),
+            Cmd::PlayAll(track_views) => {
+                player.play_all(&track_views).unwrap();
+                Queue::send(QueueMsg::PlayAll(track_views));
+                Ok(())
+            }
+            Cmd::PlayIndex(index) => {
+                player.play_index(index).unwrap();
+                Queue::send(QueueMsg::PlayIndex(index));
+                Ok(())
+            }
+            Cmd::Append(track_view) => {
+                player.append(&track_view).unwrap();
+                Queue::send(QueueMsg::Append(track_view));
+                Ok(())
+            }
+            Cmd::AppendAll(track_views) => {
+                player.append_all(&track_views).unwrap();
+                Queue::send(QueueMsg::AppendAll(track_views));
+                Ok(())
+            }
+            Cmd::QueueRemove(index) => {
+                player.queue_remove(index).unwrap();
+                Queue::send(QueueMsg::QueueRemove(index));
+                Ok(())
+            }
+            Cmd::QueueMove { target, position } => {
+                player.queue_move(target, position).unwrap();
+                Queue::send(QueueMsg::QueueMove { target, position });
+                Ok(())
+            }
             Cmd::SetShuffle(b) => player.set_shuffle(b),
             Cmd::SetRepeatMode(repeat_mode) => player.set_repeat_mode(repeat_mode),
-            Cmd::Next => player.next(),
-            Cmd::Previous => player.previous(),
+            Cmd::Next => {
+                player.next().unwrap();
+                Queue::send(QueueMsg::Next);
+                Ok(())
+            }
+            Cmd::Previous => {
+                player.previous().unwrap();
+                Queue::send(QueueMsg::Previous);
+                Ok(())
+            }
             Cmd::Volume(percentage) => player.volume(percentage),
         };
     }

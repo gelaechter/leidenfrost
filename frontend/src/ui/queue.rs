@@ -1,11 +1,16 @@
+use crate::ui::{Receiver, components::table::TableMsg};
 use backend::data_view::TrackView;
 use iced::{Element, Task};
+use macros::Receiver;
 
 use crate::ui::components::track_table::{
     TrackTable, TrackTableMsg, combined_title_column, duration_column, index_column,
 };
 
+#[derive(Receiver)]
+#[message(QueueMsg)]
 pub struct Queue {
+    current_index: usize,
     /// The table displaying the current queue
     table: TrackTable,
 }
@@ -17,12 +22,15 @@ impl Default for Queue {
             .add_column(combined_title_column())
             .add_column(duration_column());
 
-        Self { table }
+        Self {
+            table,
+            current_index: 0,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum Message {
+pub enum QueueMsg {
     /// Clears the queue and plays just that track
     Play(TrackView),
     PlayAll(Vec<TrackView>),
@@ -42,47 +50,70 @@ pub enum Message {
     },
     /// Drives the used track Table
     TableDriver(TrackTableMsg),
+    Next,
+    Previous,
 }
 
 impl Queue {
-    pub fn view(&self) -> Element<'_, Message> {
-        self.table.view().map(Message::TableDriver)
+    pub fn view(&self) -> Element<'_, QueueMsg> {
+        self.table.view().map(QueueMsg::TableDriver)
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: QueueMsg) -> Task<QueueMsg> {
         // The table driver needs to return a task
-        if let Message::TableDriver(message) = message {
-            return self.table.update(message).map(Message::TableDriver);
+        if let QueueMsg::TableDriver(message) = message {
+            return self.table.update(message).map(QueueMsg::TableDriver);
         }
 
         // Everything else is just side effects
         match message {
-            Message::Play(track_view) => {
+            QueueMsg::Play(track_view) => {
                 self.table.clear();
-                let _ = self.update(Message::Append(track_view));
+                self.current_index = 0;
+                let _ = self.update(QueueMsg::Append(track_view));
+                Task::none()
             }
-            Message::PlayAll(track_views) => {
+            QueueMsg::PlayAll(track_views) => {
                 self.table.clear();
-                let _ = self.update(Message::AppendAll(track_views));
+                self.current_index = 0;
+                let _ = self.update(QueueMsg::AppendAll(track_views));
+                Task::none()
             }
-            Message::Append(track_view) => {
-                self.table.push(track_view.into());
-            }
-            Message::AppendAll(track_views) => {
+            QueueMsg::Append(track_view) => self
+                .table
+                .update(TableMsg::Push(track_view.into()))
+                .map(QueueMsg::TableDriver),
+            QueueMsg::AppendAll(track_views) => {
                 let rows = track_views.into_iter().map(Into::into).collect();
                 self.table.extend(rows);
+                Task::none()
             }
-            Message::QueueRemove(index) => {
+            QueueMsg::QueueRemove(index) => {
                 self.table.rows_mut().remove(index);
+                Task::none()
             }
-            Message::QueueMove { target, position } => {
+            QueueMsg::QueueMove { target, position } => {
                 let rows = self.table.rows_mut();
                 let row = rows.remove(target);
                 rows.insert(position, row);
+                Task::none()
             }
-            _ => {}
+            QueueMsg::PlayIndex(index) => {
+                self.current_index = index;
+                Task::none()
+            }
+            QueueMsg::Next => {
+                self.current_index += 1;
+                Task::none()
+            }
+            QueueMsg::Previous => {
+                self.current_index -= 1;
+                Task::none()
+            }
+            QueueMsg::TableDriver(_) => {
+                panic!("Impossible branch (see above)");
+                Task::none()
+            }
         }
-
-        Task::none()
     }
 }

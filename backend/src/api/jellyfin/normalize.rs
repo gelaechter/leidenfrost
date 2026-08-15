@@ -149,10 +149,9 @@ impl Normalize<BaseItemDto, TrackView> for JellyfinApi {
             file_size: None,
             //
             stream_url: id.as_ref().map(|id| {
-                self.url()
-                    .join(&format!("/Items/{id}/Download"))
-                    .unwrap()
-                    .into()
+                let mut url = self.url().join(&format!("/Items/{id}/Download")).unwrap();
+                url.set_query(Some(&format!("api_key={}", self.access_token())));
+                url.into()
             }),
             // Initialize after stream_url to allow borrowing
             id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),

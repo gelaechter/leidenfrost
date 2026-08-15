@@ -29,6 +29,7 @@ pub struct JellyfinApi {
     url: Url,
     user_id: String,
     folder_id: Option<String>,
+    access_token: String,
     #[serde(with = "http_serde::header_map")]
     headers: HeaderMap,
 }
@@ -43,7 +44,7 @@ impl UserPasswordAuth for JellyfinApi {
         username: String,
         password: String,
     ) -> Result<JellyfinApi> {
-        log::debug!("JellyfinApi::auth_user_password: {url:?}, {username:?}, {password:?}");
+        log::debug!("JellyfinApi::auth_user_password: {url:?}, {username:?}");
 
         let client = reqwest::Client::new();
         let auth_header = r#"MediaBrowser Client="Randale",Device="Android",DeviceId="aaihsgdfoiuaghsdfuawbfayuzgbsdfufzg",Version="0.0.1""#;
@@ -103,6 +104,7 @@ impl UserPasswordAuth for JellyfinApi {
             user_id: user_id.to_owned(),
             folder_id: None,
             headers,
+            access_token: access_token.to_owned(),
         })
     }
 }
@@ -114,6 +116,10 @@ impl JellyfinApi {
 
     pub fn url(&self) -> &Url {
         &self.url
+    }
+
+    pub fn access_token(&self) -> String {
+        self.access_token.to_owned()
     }
 
     /// Make a request to a relative path e.g. /Users/.../Songs
@@ -348,7 +354,7 @@ impl MusicEndpoint for JellyfinApi {
             BaseItemKind::MusicAlbum,
             pagination.clone(),
             sorting.clone(),
-            &Value::Null
+            &Value::Null,
         )
         .await
     }

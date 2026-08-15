@@ -17,7 +17,7 @@ use crate::ui::{
     ReceiverContainer,
     player::{GenericPlayer, PlayerMsg},
     playerbar::{PlayerBar, PlayerBarMsg},
-    queue::{self, Queue},
+    queue::{self, Queue, QueueMsg},
     router::{Router, RouterMsg, settings::SettingsMsg},
     sidebar::{Sidebar, SidebarMsg},
 };
@@ -77,11 +77,16 @@ pub enum Pane {
     Router,
 }
 
+/// The top level [`Message`] works as a pivot for messages received by
+/// [`super::Receiver`]. Hence it must hold Variants for each message type which
+/// has a receiver.
+///
+/// The Receivers message type is expected to implement `Into::<Message>::into`.
 #[derive(Debug, Clone)]
 pub enum Message {
     PaneResized(pane_grid::ResizeEvent),
     Sidebar(SidebarMsg),
-    Queue(Box<queue::Message>),
+    Queue(Box<queue::QueueMsg>),
     Router(RouterMsg),
     KeyboardEvent(keyboard::Event),
     Player(Box<PlayerMsg>),
@@ -116,6 +121,12 @@ impl From<RouterMsg> for Message {
 impl From<SidebarMsg> for Message {
     fn from(value: SidebarMsg) -> Self {
         Self::Sidebar(value)
+    }
+}
+
+impl From<QueueMsg> for Message {
+    fn from(value: QueueMsg) -> Self {
+        Self::Queue(Box::new(value))
     }
 }
 

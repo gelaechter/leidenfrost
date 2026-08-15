@@ -119,7 +119,7 @@ impl<T> Row<T> {
     pub fn new(item: T) -> Self {
         Row {
             item,
-            visible: false,
+            visible: true,
             selected: false,
             clicked_at: None,
         }
@@ -221,7 +221,7 @@ impl<T, M> Column<T, M> {
 }
 
 #[derive(Debug, Clone)]
-pub enum Cmd<M: Clone> {
+pub enum Cmd<M: Clone, T: Clone> {
     /// Row visibility
     RowShown(usize),
     RowHidden(usize),
@@ -239,6 +239,7 @@ pub enum Cmd<M: Clone> {
     /// Notification on column size change
     MeasureColumn(usize, Size),
     RowClicked(usize),
+    Push(T),
 }
 
 #[derive(Debug, Clone)]
@@ -259,14 +260,14 @@ const CHUNK_SIZE: usize = 100;
 /// A table message defined by
 /// - T: The table data type
 /// - M: The cell message
-pub type TableMsg<M> = Cmd<M>;
+pub type TableMsg<M, T> = Cmd<M, T>;
 
 impl<T, M> Table<T, M>
 where
     T: std::fmt::Debug + Clone + MaybeSend + 'static,
     M: std::fmt::Debug + Clone + MaybeSend + 'static,
 {
-    pub fn view(&self) -> Element<'_, TableMsg<M>> {
+    pub fn view(&self) -> Element<'_, TableMsg<M, T>> {
         let content = widget::column![
             widget::rule::horizontal(1),
             self.table_header(),
@@ -289,8 +290,12 @@ where
         mouse_area.into()
     }
 
-    pub fn update(&mut self, message: impl Into<TableMsg<M>>) -> Task<TableMsg<M>> {
+    pub fn update(&mut self, message: impl Into<TableMsg<M, T>>) -> Task<TableMsg<M, T>> {
         match message.into() {
+            Cmd::Push(data) => {
+                self.rows.push(Row::new(data));
+                Task::none()
+            },
             Cmd::RowShown(row_idx) => {
                 self.rows[row_idx].visible = true;
                 Task::none()
@@ -430,7 +435,7 @@ where
             .collect()
     }
 
-    pub fn table_header(&self) -> Element<'_, Cmd<M>> {
+    pub fn table_header(&self) -> Element<'_, TableMsg<M, T>> {
         let last = self.columns.len() - 1;
         let headers = self.columns.iter().enumerate().map(|(idx, col)| {
             // The header
@@ -442,7 +447,7 @@ where
                 .align_y(Vertical::Center);
 
             // All the headers except the last get a grab button
-            let content: Element<'_, Cmd<M>> = if idx < last {
+            let content: Element<'_, TableMsg<M, T>> = if idx < last {
                 // Grab button for resizing
                 let button = Self::grab_button(col);
                 row![header, button].width(Fill).into()
@@ -465,7 +470,7 @@ where
     }
 
     /// The button at the right end of a column that allows resizing it
-    pub fn grab_button(column: &Column<T, M>) -> widget::Container<'_, Cmd<M>> {
+    pub fn grab_button(column: &Column<T, M>) -> widget::Container<'_, TableMsg<M, T>> {
         widget::container(
             widget::button(widget::space())
                 .style(|theme: &Theme, _status| Style {
@@ -494,7 +499,7 @@ where
     /// (I tested this with up to `800_000` rows)
     ///
     /// TODO: refactor this (it reads like shit)
-    pub fn sliding_window(&self) -> Element<'_, Cmd<M>> {
+    pub fn sliding_window(&self) -> Element<'_, TableMsg<M, T>> {
         // Split the rows into chunks of size CHUNK_ROWS
         let rows = self
             .rows
@@ -502,7 +507,7 @@ where
             .enumerate()
             .map(|(chunk_idx, chunk)| {
                 // Check if the chunk is visible
-                let chunk: Element<'_, Cmd<M>> = if self.visible_chunks.contains(&chunk_idx) {
+                let chunk: Element<'_, TableMsg<M, T>> = if self.visible_chunks.contains(&chunk_idx) {
                     widget::column(chunk.iter().enumerate().map(|(row_idx, row)| {
                         // Calculate proper row index with
                         let row_idx = row_idx + chunk_idx * CHUNK_SIZE;
@@ -544,7 +549,7 @@ where
     }
 
     /// A row showing all the columns for an item T
-    pub fn item_row<'a>(&self, row_idx: usize, row: &'a Row<T>) -> Element<'a, Cmd<M>> {
+    pub fn item_row<'a>(&self, row_idx: usize, row: &'a Row<T>) -> Element<'a, TableMsg<M, T>> {
         // The columns
         let columns = self.columns.iter().enumerate().map(|(col_idx, col)| {
             widget::container(

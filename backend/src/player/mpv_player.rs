@@ -169,7 +169,6 @@ impl Player for MpvPlayer {
     }
 
     fn play(&self, view: &TrackView) -> Result<()> {
-        log::debug!("Trackview: {view:?}");
         let url = try_track_url(view)?;
 
         self.0

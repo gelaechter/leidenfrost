@@ -19,6 +19,7 @@ use crate::ui::{
         settings::{Settings, SettingsMsg},
         tracks::Tracks,
     },
+    sidebar::{Sidebar, SidebarMsg},
 };
 
 #[derive(Default, Receiver)]
@@ -112,6 +113,8 @@ impl Router {
         match message.into() {
             Msg::ChangeRoute(route) => {
                 self.route = route.clone();
+                // Notify the sidebar of the change so it can show the current route
+                Sidebar::send(SidebarMsg::RouteChanged(route));
                 Task::none()
             }
             Msg::TracksDriver(message) => self.tracks.update(message).map(Msg::TracksDriver),
