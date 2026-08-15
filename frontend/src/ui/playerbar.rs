@@ -198,7 +198,7 @@ impl PlayerBar {
                 .spacing(8)
                 .width(Fill),
             )
-            .max_width(800),
+            .width(Fill.max(800)),
         )
         .center(Fill)
         .into()

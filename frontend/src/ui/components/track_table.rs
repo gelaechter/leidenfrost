@@ -116,7 +116,6 @@ pub fn duration_column() -> Column<TrackRow, TrackCellMsg> {
                     icons::clock()
                 })
                 .center(Fill)
-                .into()
             })
             .into()
         },

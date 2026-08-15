@@ -255,7 +255,7 @@ impl Settings {
             .spacing(24)
             .into(),
         ])
-        .max_width(900)
+        .width(Fill.max(900))
         .into()
     }
 
@@ -266,7 +266,7 @@ impl Settings {
             widget::column([todo!()]).spacing(8).into(),
         ]))
         .padding(16)
-        .max_width(900)
+        .width(Fill.max(900))
         .into()
     }
 

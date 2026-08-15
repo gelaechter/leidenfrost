@@ -57,9 +57,6 @@ where
             .draw(tree, renderer, theme, style, layout, cursor, viewport);
     }
 
-    fn size_hint(&self) -> iced::Size<iced::Length> {
-        self.inner.as_widget().size_hint()
-    }
 
     fn tag(&self) -> iced::advanced::widget::tree::Tag {
         self.tag
@@ -69,14 +66,8 @@ where
         self.inner.as_widget().state()
     }
 
-    fn children(&self) -> Vec<iced::advanced::widget::Tree> {
-        self.inner.as_widget().children()
-    }
-
-    fn diff(&self, tree: &mut iced::advanced::widget::Tree) {
-        // Here we simply clear everything since we do not want the tree
-        // to do a proper diff. We want to rebuild the entire tree from scratch
-        self.inner.as_widget().diff(tree);
+    fn diff(&mut self, tree: &mut iced::advanced::widget::Tree) {
+        self.inner.as_widget_mut().diff(tree);
     }
 
     fn operate(
@@ -127,6 +118,10 @@ where
         self.inner
             .as_widget_mut()
             .overlay(tree, layout, renderer, viewport, translation)
+    }
+    
+    fn is_void(&self) -> bool {
+        false
     }
 }
 

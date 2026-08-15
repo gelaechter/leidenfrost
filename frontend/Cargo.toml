@@ -5,7 +5,7 @@ authors.workspace = true
 edition = "2024"
 
 [dependencies]
-iced = { git = "https://github.com/gelaechter/iced", rev = "50cd4b520b5698b94a3f9678427083c9eaadc689", features = [
+iced = { git = "https://github.com/gelaechter/iced", rev = "f6ab97fd1a1e8782cf51224062ff786b4cd7f35e", features = [
     "image",
     "sipper",
     "tokio",

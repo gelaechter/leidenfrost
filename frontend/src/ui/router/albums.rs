@@ -265,7 +265,6 @@ pub fn duration_column() -> Column<AlbumRow, AlbumCellMsg> {
                     icons::clock()
                 })
                 .center(Fill)
-                .into()
             })
             .into()
         },

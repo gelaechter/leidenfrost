@@ -243,12 +243,12 @@ impl Image {
             }
             Some(Content::Error) => widget::responsive(|s| {
                 let size = s.ratio(1.0).width;
-                icons::image_off().size(size - 16.0).into()
+                icons::image_off().size(size - 16.0)
             })
             .into(),
             None => widget::responsive(|s| {
                 let size = s.ratio(1.0).width;
-                icons::image_down().size(size - 16.0).into()
+                icons::image_down().size(size - 16.0)
             })
             .into(),
         };
