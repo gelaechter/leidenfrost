@@ -18,6 +18,7 @@ use iced::{
         row,
     },
 };
+use uuid::Uuid;
 
 /// A table component
 pub struct Table<T, M> {
@@ -103,6 +104,9 @@ impl<T, M> Table<T, M> {
 }
 
 pub struct Row<T> {
+    /// A random ID used to key the rows, this way we can prevent different rows
+    /// from being merged during a DOM diff
+    id: Uuid,
     item: T,
     /// Is the row currently visible?
     visible: bool,
@@ -118,8 +122,9 @@ pub struct Row<T> {
 impl<T> Row<T> {
     pub fn new(item: T) -> Self {
         Row {
+            id: Uuid::new_v4(),
             item,
-            visible: true,
+            visible: false,
             selected: false,
             clicked_at: None,
         }
@@ -221,7 +226,7 @@ impl<T, M> Column<T, M> {
 }
 
 #[derive(Debug, Clone)]
-pub enum Cmd<M: Clone, T: Clone> {
+pub enum Cmd<M: Clone> {
     /// Row visibility
     RowShown(usize),
     RowHidden(usize),
@@ -239,7 +244,6 @@ pub enum Cmd<M: Clone, T: Clone> {
     /// Notification on column size change
     MeasureColumn(usize, Size),
     RowClicked(usize),
-    Push(T),
 }
 
 #[derive(Debug, Clone)]
@@ -260,14 +264,14 @@ const CHUNK_SIZE: usize = 100;
 /// A table message defined by
 /// - T: The table data type
 /// - M: The cell message
-pub type TableMsg<M, T> = Cmd<M, T>;
+pub type TableMsg<M> = Cmd<M>;
 
 impl<T, M> Table<T, M>
 where
     T: std::fmt::Debug + Clone + MaybeSend + 'static,
     M: std::fmt::Debug + Clone + MaybeSend + 'static,
 {
-    pub fn view(&self) -> Element<'_, TableMsg<M, T>> {
+    pub fn view(&self) -> Element<'_, TableMsg<M>> {
         let content = widget::column![
             widget::rule::horizontal(1),
             self.table_header(),
@@ -290,12 +294,8 @@ where
         mouse_area.into()
     }
 
-    pub fn update(&mut self, message: impl Into<TableMsg<M, T>>) -> Task<TableMsg<M, T>> {
+    pub fn update(&mut self, message: impl Into<TableMsg<M>>) -> Task<TableMsg<M>> {
         match message.into() {
-            Cmd::Push(data) => {
-                self.rows.push(Row::new(data));
-                Task::none()
-            },
             Cmd::RowShown(row_idx) => {
                 self.rows[row_idx].visible = true;
                 Task::none()
@@ -435,7 +435,7 @@ where
             .collect()
     }
 
-    pub fn table_header(&self) -> Element<'_, TableMsg<M, T>> {
+    pub fn table_header(&self) -> Element<'_, TableMsg<M>> {
         let last = self.columns.len() - 1;
         let headers = self.columns.iter().enumerate().map(|(idx, col)| {
             // The header
@@ -447,7 +447,7 @@ where
                 .align_y(Vertical::Center);
 
             // All the headers except the last get a grab button
-            let content: Element<'_, TableMsg<M, T>> = if idx < last {
+            let content: Element<'_, TableMsg<M>> = if idx < last {
                 // Grab button for resizing
                 let button = Self::grab_button(col);
                 row![header, button].width(Fill).into()
@@ -470,7 +470,7 @@ where
     }
 
     /// The button at the right end of a column that allows resizing it
-    pub fn grab_button(column: &Column<T, M>) -> widget::Container<'_, TableMsg<M, T>> {
+    pub fn grab_button(column: &Column<T, M>) -> widget::Container<'_, TableMsg<M>> {
         widget::container(
             widget::button(widget::space())
                 .style(|theme: &Theme, _status| Style {
@@ -499,7 +499,7 @@ where
     /// (I tested this with up to `800_000` rows)
     ///
     /// TODO: refactor this (it reads like shit)
-    pub fn sliding_window(&self) -> Element<'_, TableMsg<M, T>> {
+    pub fn sliding_window(&self) -> Element<'_, TableMsg<M>> {
         // Split the rows into chunks of size CHUNK_ROWS
         let rows = self
             .rows
@@ -507,9 +507,10 @@ where
             .enumerate()
             .map(|(chunk_idx, chunk)| {
                 // Check if the chunk is visible
-                let chunk: Element<'_, TableMsg<M, T>> = if self.visible_chunks.contains(&chunk_idx) {
+                let chunk: Element<'_, TableMsg<M>> = if self.visible_chunks.contains(&chunk_idx) {
                     widget::column(chunk.iter().enumerate().map(|(row_idx, row)| {
                         // Calculate proper row index with
+                        let key = row.id;
                         let row_idx = row_idx + chunk_idx * CHUNK_SIZE;
                         let row = if row.visible {
                             // Row is visible so produce the row
@@ -522,6 +523,8 @@ where
                         // Wrap the row with a sensor to watch if it's visible
                         widget::sensor(row)
                             .anticipate(ANTICIPATED_ROWS * ROW_HEIGHT)
+                            // row visibility should not be kept when recalculating the layout
+                            .key(key)
                             .on_show(move |_| Cmd::RowShown(row_idx))
                             .on_hide(Cmd::RowHidden(row_idx))
                             .into()
@@ -549,7 +552,7 @@ where
     }
 
     /// A row showing all the columns for an item T
-    pub fn item_row<'a>(&self, row_idx: usize, row: &'a Row<T>) -> Element<'a, TableMsg<M, T>> {
+    pub fn item_row<'a>(&self, row_idx: usize, row: &'a Row<T>) -> Element<'a, TableMsg<M>> {
         // The columns
         let columns = self.columns.iter().enumerate().map(|(col_idx, col)| {
             widget::container(

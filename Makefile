@@ -31,5 +31,11 @@ profile:
 		echo "or get it here: https://github.com/mstange/samply"; \
 		exit 1; \
 	}
+	@ { [ "$$(cat /proc/sys/kernel/perf_event_paranoid 2>/dev/null)" -le -1 ]; } || { \
+		echo "perf_event_paranoid must be <= -1 for samply to work"; \
+		echo "(see https://github.com/mstange/samply/issues/25)"; \
+		echo "Run: echo '-1' | sudo tee /proc/sys/kernel/perf_event_paranoid" \
+		>&2; exit 1; \
+	}
 	@cargo build --profile profiling
 	@samply record ./target/profiling/leidenfrost

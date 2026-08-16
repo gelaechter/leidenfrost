@@ -255,6 +255,9 @@ impl Image {
 
         // Sensor that checks width/height the image is trying to occupy
         let mut sensor = widget::sensor(image)
+            // key images so that if a reflow is triggered where images are replaced with others the
+            // events then re-emit
+            .key(self.url.to_string())
             .on_resize(ImgMsg::Resized)
             .on_show(ImgMsg::Shown)
             .on_hide(ImgMsg::Hidden);
@@ -287,7 +290,6 @@ impl Image {
         match message {
             // Once the image is shown / size is changed
             ImgMsg::Shown(size) => {
-                log::debug!("Shown image {} with size: {size:?}", self.url);
                 if size.width < 16.0 || size.height < 16.0 {
                     log::warn!(
                         "Tiny image shown; Are you still layouting?\n\
@@ -309,7 +311,6 @@ impl Image {
                 }
             }
             ImgMsg::Hidden => {
-                log::debug!("Hidden image {}", self.url);
                 // If the image is hidden before it is fully downloaded
                 // the download may be aborted
                 if let Some(download_task) = &self.download_task.take() {

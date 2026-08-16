@@ -1,4 +1,4 @@
-use crate::ui::{Receiver, components::table::TableMsg};
+use crate::ui::Receiver;
 use backend::data_view::TrackView;
 use iced::{Element, Task};
 use macros::Receiver;
@@ -79,10 +79,10 @@ impl Queue {
                 let _ = self.update(QueueMsg::AppendAll(track_views));
                 Task::none()
             }
-            QueueMsg::Append(track_view) => self
-                .table
-                .update(TableMsg::Push(track_view.into()))
-                .map(QueueMsg::TableDriver),
+            QueueMsg::Append(track_view) => {
+                self.table.push(track_view.into());
+                Task::none()
+            },
             QueueMsg::AppendAll(track_views) => {
                 let rows = track_views.into_iter().map(Into::into).collect();
                 self.table.extend(rows);
@@ -111,8 +111,7 @@ impl Queue {
                 Task::none()
             }
             QueueMsg::TableDriver(_) => {
-                panic!("Impossible branch (see above)");
-                Task::none()
+                panic!("Impossible branch (see above)")
             }
         }
     }

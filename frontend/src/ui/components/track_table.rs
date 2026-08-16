@@ -31,7 +31,7 @@ use iced::{
 /// A table showing tracks
 pub type TrackTable = Table<TrackRow, TrackCellMsg>;
 /// The corresponding message
-pub type TrackTableMsg = TableMsg<TrackCellMsg, TrackRow>;
+pub type TrackTableMsg = TableMsg<TrackCellMsg>;
 
 /// The data that represents one row in the table
 #[derive(Debug, Clone)]

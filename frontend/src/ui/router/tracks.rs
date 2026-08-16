@@ -109,7 +109,7 @@ impl Tracks {
                             .get_tracks(GetTracksParams {
                                 pagination: Some(Pagination {
                                     start_page: 0,
-                                    limit: 100,
+                                    limit: 99999,
                                 }),
                                 sorting: None,
                             })
