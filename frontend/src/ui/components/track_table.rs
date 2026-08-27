@@ -45,15 +45,13 @@ static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 /// Convenience since we mostly want to display [`TrackView`]s
 impl From<TrackView> for TrackRow {
-    /// This conversion is blocking since we decode the blurhashes
-    /// beforehand; Treat it as such
     fn from(track_view: TrackView) -> Self {
         // Create an image if available
         let image = track_view.track.image_url.clone().map(|url| {
             let blurhash = track_view.track.image_blur_hash.clone();
             Image::new(url)
                 .blurhash_maybe(blurhash)
-                .pre_decode_blurhash(64, 64)
+                .debounce_blurhash(Duration::from_millis(10))
                 .debounce(Duration::from_millis(500))
                 .border_radius(8)
         });

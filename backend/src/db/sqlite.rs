@@ -597,6 +597,24 @@ impl EndpointDB {
     }
 }
 
+impl EndpointDB {
+    async fn load_genres(&self, ids: &[String]) -> Result<HashMap<String, Vec<genre::Model>>> {
+        let rows = album::Entity::find()
+            .filter(album::Column::Id.is_in(ids.to_vec()))
+            .find_also_linked(album::AlbumToGenres)
+            .all(&self.db)
+            .await?;
+
+        let mut map: HashMap<String, Vec<genre::Model>> = HashMap::new();
+        for (album, genre) in rows {
+            if let Some(g) = genre {
+                map.entry(album.id).or_default().push(g);
+            }
+        }
+        Ok(map)
+}
+}
+
 #[async_trait]
 impl MusicEndpoint for EndpointDB {
     /// Provides the capabilities of this API

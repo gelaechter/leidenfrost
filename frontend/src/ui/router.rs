@@ -12,14 +12,11 @@ use iced::{
 use macros::Receiver;
 
 use crate::ui::{
-    Receiver,
-    components::tagged::tagged,
-    router::{
+    Receiver, router::{
         albums::Albums,
         settings::{Settings, SettingsMsg},
         tracks::Tracks,
-    },
-    sidebar::{Sidebar, SidebarMsg},
+    }, sidebar::{Sidebar, SidebarMsg}, widgets::tagged::tagged,
 };
 
 #[derive(Default, Receiver)]

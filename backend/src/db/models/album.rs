@@ -1,3 +1,4 @@
+
 use chrono::NaiveDate;
 use sea_orm::prelude::*;
 
@@ -6,7 +7,7 @@ use crate::db::models::OrmUrl;
 #[sea_orm::model]
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
 #[sea_orm(table_name = "album")]
-pub struct Model {
+pub struct Model<T> {
     #[sea_orm(primary_key)]
     pub id: String,
     pub endpoint_id: String,

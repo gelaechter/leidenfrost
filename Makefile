@@ -15,12 +15,14 @@ run:
 # Run the application with debug logging
 verbose:
 	@RUST_LOG="leidenfrost=debug" \
+		RUST_BACKTRACE=1 \
 		cargo run --release
 
 # Run the application with all debugging bells & whistles
 debug:
 	@RUSTFLAGS="-Awarnings --cfg tokio_unstable" \
 		RUST_LOG="leidenfrost=debug" \
+		RUST_BACKTRACE=1 \
 		cargo run -F debug --release \
 
 # Profile the application

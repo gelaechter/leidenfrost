@@ -121,20 +121,13 @@ impl Tracks {
                 )
             }
             Cmd::TracksFetched(tracks) => {
+                log::debug!("Fetched {} tracks", tracks.len());
                 // After fetching convert the track_views into rowdata
-                Task::perform(
-                    async {
-                        // [`TrackRow::from::<TrackView>()`] is blocking
-                        tokio::task::spawn_blocking(move || {
-                            tracks.into_iter().map(TrackRow::from).collect()
-                        })
-                        .await
-                        .unwrap()
-                    },
-                    Cmd::RowsCreated,
-                )
+                let rows = tracks.into_iter().map(TrackRow::from).collect();
+                Task::done(Cmd::RowsCreated(rows))
             }
             Cmd::RowsCreated(row_data) => {
+                log::debug!("Rows created");
                 // Insert tracks
                 self.track_table.extend(row_data);
                 Task::none()

@@ -20,6 +20,7 @@ use iced::{
 };
 use uuid::Uuid;
 
+
 /// A table component
 pub struct Table<T, M> {
     /// The table rows
@@ -563,8 +564,7 @@ where
             .padding(Padding::new(8.0))
             .clip(true)
             .align_x(col.align_x)
-            .align_y(col.align_y)
-            .into()
+            .align_y(col.align_y).into()
         });
 
         // Row button allowing selection

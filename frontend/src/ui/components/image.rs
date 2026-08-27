@@ -1,11 +1,5 @@
 use iced::{
-    Alignment::Center,
-    Border, Color, ContentFit, Element,
-    Length::{self},
-    Size, Task,
-    border::{self, Radius},
-    task::{self},
-    widget::{
+    Alignment::Center, Border, Color, ContentFit, Element, Length::{self}, Size, Task, advanced::Widget, border::{self, Radius}, task::{self}, widget::{
         self, container,
         image::{self},
     },
@@ -102,7 +96,8 @@ pub struct Image {
     /// The size of the image container
     measured_size: Size,
     /// Duration to wait before registering image visibility
-    debounce: Option<Duration>,
+    image_debounce: Option<Duration>,
+    blurhash_debounce: Option<Duration>,
     /// The images blur hash (if any)
     blurhash: Option<String>,
     /// This function gives the image the ability to modify the given
@@ -120,6 +115,7 @@ pub struct Image {
     download_task: Option<task::Handle>,
     /// Any running blurhash decoding task
     blurhash_task: Option<task::Handle>,
+    visible: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -127,12 +123,16 @@ pub enum ImgMsg {
     Hidden,
     /// The image has become visible
     Shown(Size),
+    /// The blurhash should be rendered
+    DebounceBlurhash(Size),
+    /// The image should be rendered
+    DebounceImage(Size),
     /// The image was resized
     Resized(Size),
     /// The blurhash has been decoded
     BlurhashDecoded(Result<image::Handle, Error>),
     /// The image has been downloaded and allocated
-    Downloaded(Result<image::Handle, Error>),
+    ImageDownloaded(Result<image::Handle, Error>),
 }
 
 #[derive(Debug, Clone)]
@@ -154,13 +154,15 @@ impl Image {
                 height: 16.0,
             },
             status: None,
-            debounce: None,
+            image_debounce: None,
             download_task: None,
             blurhash_task: None,
             height: None,
             width: None,
             border_radius: Radius::default(),
             responsive_resolution: false,
+            blurhash_debounce: None,
+            visible: false,
         }
     }
 
@@ -209,6 +211,7 @@ impl Image {
 
     /// Decodes the blurhash (if any) beforehand;
     /// This is a blocking operation and should be treated as such
+    #[deprecated = "let the blurhash calculate dynamically"]
     pub fn pre_decode_blurhash(mut self, width: u32, height: u32) -> Self {
         if let Some(blurhash) = &self.blurhash
             && let Ok(pixels) = blurhash::decode(blurhash, width, height, 1.0)
@@ -219,13 +222,15 @@ impl Image {
         self
     }
 
-    /// Debounces the visibility of the image
-    ///
-    /// This can be used together with [`Image::pre_decode_blurhash`] to
-    /// immediately show a blurhash, but only start fetching the actual image
-    /// once it has been visible for a certain amount of time.
+    /// Debounces the fetching of the image
     pub fn debounce(mut self, duration: Duration) -> Self {
-        self.debounce = Some(duration);
+        self.image_debounce = Some(duration);
+        self
+    }
+
+    /// Debounces the rendering of the blurhash
+    pub fn debounce_blurhash(mut self, duration: Duration) -> Self {
+        self.blurhash_debounce = Some(duration);
         self
     }
 }
@@ -243,29 +248,28 @@ impl Image {
             }
             Some(Content::Error) => widget::responsive(|s| {
                 let size = s.ratio(1.0).width;
-                icons::image_off().size(size - 16.0)
+                widget::center(
+                    icons::image_off()
+                        .size(size - 16.0)
+                        .color(Color::BLACK.scale_alpha(0.5)),
+                )
             })
             .into(),
             None => widget::responsive(|s| {
-                let size = s.ratio(1.0).width;
-                icons::image_down().size(size - 16.0)
+                let size = s.ratio(1.0);
+                widget::space().height(size.height).width(size.width)
             })
             .into(),
         };
 
         // Sensor that checks width/height the image is trying to occupy
-        let mut sensor = widget::sensor(image)
+        let sensor = widget::sensor(image)
             // key images so that if a reflow is triggered where images are replaced with others the
             // events then re-emit
             .key(self.url.to_string())
             .on_resize(ImgMsg::Resized)
             .on_show(ImgMsg::Shown)
             .on_hide(ImgMsg::Hidden);
-
-        // Set an optional delay to debounce
-        if let Some(delay) = self.debounce {
-            sensor = sensor.delay(delay);
-        }
 
         let mut container = widget::container(sensor)
             .align_x(Center)
@@ -290,6 +294,11 @@ impl Image {
         match message {
             // Once the image is shown / size is changed
             ImgMsg::Shown(size) => {
+                self.visible = true;
+                if size.width < 1.0 || size.height < 1.0 {
+                    return Task::none();
+                }
+
                 if size.width < 16.0 || size.height < 16.0 {
                     log::warn!(
                         "Tiny image shown; Are you still layouting?\n\
@@ -298,19 +307,66 @@ impl Image {
                         self.url
                     );
                 }
+                self.measured_size = size;
 
-                match self.status {
-                    // No image and Blurhash exists
-                    None if self.blurhash.is_some() => {
-                        Task::batch([self.blurhash_task(), self.download_task()])
+                let Image {
+                    image_debounce,
+                    blurhash_debounce,
+                    blurhash,
+                    ..
+                } = self.clone();
+
+                // Only render the blurhash if one is set
+                let blurhash_timer = if blurhash.is_some() && self.status.is_none() {
+                    // Delay the blurhash if a delay is set
+                    if let Some(debounce) = blurhash_debounce {
+                        Task::future(async move {
+                            tokio::time::sleep(debounce).await;
+                            Some(ImgMsg::DebounceBlurhash(size))
+                        })
+                        .and_then(Task::done)
+                    } else {
+                        Task::done(ImgMsg::DebounceBlurhash(size))
                     }
-                    // No image or just a blurhash
-                    None | Some(Content::Blurhash(_)) => self.download_task(),
-                    // Do nothing if image already loaded or errored
-                    Some(Content::Full(_) | Content::Error) => Task::none(),
+                } else {
+                    Task::none()
+                };
+
+                // Delay the image if a delay is set
+                let render_timer = if matches!(self.status, None | Some(Content::Blurhash(_))) {
+                    if let Some(debounce) = image_debounce {
+                        Task::future(async move {
+                            tokio::time::sleep(debounce).await;
+                            Some(ImgMsg::DebounceImage(size))
+                        })
+                        .and_then(Task::done)
+                    } else {
+                        Task::done(ImgMsg::DebounceImage(size))
+                    }
+                } else {
+                    Task::none()
+                };
+
+                Task::batch([blurhash_timer, render_timer])
+            }
+            ImgMsg::DebounceBlurhash(size) => {
+                if self.visible && self.status.is_none() {
+                    return self.blurhash_task();
                 }
+
+                Task::none()
+            }
+            ImgMsg::DebounceImage(size) => {
+                if self.visible && matches!(self.status, None | Some(Content::Blurhash(_))) {
+                    return self.download_task();
+                }
+
+                Task::none()
             }
             ImgMsg::Hidden => {
+                // stop tracking time once the image is hidden
+                self.visible = false;
+
                 // If the image is hidden before it is fully downloaded
                 // the download may be aborted
                 if let Some(download_task) = &self.download_task.take() {
@@ -345,7 +401,7 @@ impl Image {
                 self.blurhash_task.take();
                 Task::none()
             }
-            ImgMsg::Downloaded(handle) => {
+            ImgMsg::ImageDownloaded(handle) => {
                 if let Ok(handle) = handle {
                     self.status = Some(Content::Full(handle));
                     // Download has concluded so abort blurhash decoding
@@ -382,7 +438,7 @@ impl Image {
     }
 
     /// Asynchronously decodes the blurhash for the given size
-    #[allow(clippy::cast_possible_truncation)] // Sizes are relatively small
+    #[allow(clippy::cast_possible_truncation)] // the resol are relatively small
     #[allow(clippy::cast_sign_loss)] // And they shouldn't be negative either
     async fn decode_blurhash(blurhash: String, size: Size) -> Result<Rgba, Error> {
         let width = size.width.round() as u32;
@@ -433,7 +489,7 @@ impl Image {
             image::allocate(image::Handle::from_bytes(bytes)).map_err(|_| Error::ImageDecodingFailed)
         })
         .and_then(|a| Task::done(Ok(a.handle().clone())))
-        .map(ImgMsg::Downloaded)
+        .map(ImgMsg::ImageDownloaded)
         .abortable();
 
         // Set download handle and return value

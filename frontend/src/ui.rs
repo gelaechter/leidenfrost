@@ -6,6 +6,7 @@ pub mod playerbar;
 pub mod queue;
 pub mod router;
 pub mod sidebar;
+pub mod widgets;
 
 use iced::Subscription;
 

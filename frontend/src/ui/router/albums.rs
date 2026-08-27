@@ -95,19 +95,8 @@ impl Albums {
                 })
                 .then(|albums| {
                     // After fetching convert the track_views into rowdata
-                    Task::perform(
-                        async {
-                            // [`AlbumRow::from::<AlbumView>()`] is blocking
-                            let row_data: Vec<AlbumRow> = tokio::task::spawn_blocking(move || {
-                                albums.into_iter().map(AlbumRow::from).collect()
-                            })
-                            .await
-                            .unwrap();
-
-                            row_data
-                        },
-                        Message::RowsCreated,
-                    )
+                    let rows = albums.into_iter().map(AlbumRow::from).collect();
+                    Task::done(Message::RowsCreated(rows))
                 })
             }
             Message::RowsCreated(row_data) => {
@@ -133,15 +122,13 @@ static COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 /// Convenience since we mostly want to display [`AlbumView`]s
 impl From<AlbumView> for AlbumRow {
-    /// This conversion is blocking since we decode the blurhashes
-    /// beforehand; Treat it as such
     fn from(album_view: AlbumView) -> Self {
         // Create an image if available
         let image = album_view.album.image_url.clone().map(|url| {
             let blurhash = album_view.album.image_blur_hash.clone();
             Image::new(url)
                 .blurhash_maybe(blurhash)
-                .pre_decode_blurhash(64, 64)
+                .debounce_blurhash(Duration::from_millis(10))
                 .debounce(Duration::from_millis(500))
                 .border_radius(8)
         });
