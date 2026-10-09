@@ -18,8 +18,8 @@ use crate::{
         AlbumView, ArtistView, GenreView, PlaylistView, RelatedArtist, RelatedGenre, TrackView,
     },
     db::{
-        models::{Album, Artist, Genre, Playlist, Track},
-        sqlite::IndexableEndpoint,
+        models::{album::Album, artist::Artist, genre::Genre, playlist::Playlist, track::Track},
+        sqlite::indexable::IndexableEndpoint,
     },
 };
 
@@ -73,6 +73,7 @@ impl Normalize<BaseItemDto, TrackView> for JellyfinApi {
             run_time_ticks,
             type_,
             user_data,
+            date_created,
             ..
         } = value;
 
@@ -158,6 +159,7 @@ impl Normalize<BaseItemDto, TrackView> for JellyfinApi {
             track_number: index_number,
             user_favorite: is_favorite,
             endpoint_id: self.get_id(),
+            date_added: date_created.and_then(|s| NaiveDateTime::from_str(&s).ok()),
         };
 
         TrackView {
@@ -253,6 +255,7 @@ impl Normalize<BaseItemDto, AlbumView> for JellyfinApi {
             run_time_ticks,
             type_,
             user_data,
+            date_created,
             ..
         } = value;
 
@@ -297,6 +300,7 @@ impl Normalize<BaseItemDto, AlbumView> for JellyfinApi {
             id: id.unwrap_or_else(|| Uuid::new_v4().to_string()),
             user_favorite: is_favorite,
             endpoint_id: self.get_id(),
+            date_added: date_created.and_then(|s| NaiveDateTime::from_str(&s).ok()),
         };
 
         AlbumView {
@@ -380,6 +384,7 @@ impl Normalize<BaseItemDto, ArtistView> for JellyfinApi {
             run_time_ticks,
             type_,
             user_data,
+            date_created,
             ..
         } = value;
 
@@ -442,6 +447,7 @@ impl Normalize<BaseItemDto, ArtistView> for JellyfinApi {
             user_rating: rating.map(|f| f.round() as i64),
             play_count,
             endpoint_id: self.get_id(),
+            date_added: date_created.and_then(|s| NaiveDateTime::from_str(&s).ok()),
         };
 
         ArtistView {
@@ -465,6 +471,7 @@ impl From<TrackSorting> for ItemSortBy {
             // correct
             TrackSorting::DatePlayed => Self::DatePlayed,
             TrackSorting::DateReleased => Self::PremiereDate,
+            TrackSorting::Number => Self::IndexNumber,
         }
     }
 }

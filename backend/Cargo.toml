@@ -5,13 +5,7 @@ authors.workspace = true
 edition = "2024"
 
 [dependencies]
-sea-orm = { version = "2.0.0", features = [
-    "sqlx-sqlite",
-    "runtime-tokio",
-    "with-chrono",
-    "schema-sync",
-    "entity-registry",
-] }
+sqlx = { version = "0.9.0", features = ["chrono", "json", "macros", "migrate", "runtime-tokio", "sqlite"] }
 http-serde = "2.1.1"
 async-trait = "0.1.89"
 directories = "6.0.0"
@@ -19,7 +13,6 @@ libmpv2 = "6.0.0"
 env_logger = "0.11.11"
 serde_json = { package = "serde_json_path_to_error", version = "0.1.5" }
 strum = { version = "0.28", features = ["derive"] }
-
 tokio = { workspace = true, features = ["macros"] }
 tokio-stream.workspace = true
 console-subscriber = { workspace = true, optional = true }

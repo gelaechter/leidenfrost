@@ -1,15 +1,10 @@
-use rstest::rstest;
-use std::{iter, path::PathBuf};
-use strum::IntoEnumIterator;
+use std::path::PathBuf;
 
 use env_logger::Env;
 
 use crate::{
-    api::endpoint_api::{
-        AlbumSorting, GetAlbumsParams, GetTracksParams, MusicEndpoint, Pagination, Sort,
-        SortOrder::{self, Ascending},
-    },
-    db::{models::Album, sqlite::EndpointDB},
+    api::endpoint_api::{GetTracksParams, MusicEndpoint, Pagination},
+    db::sqlite::EndpointDB,
 };
 
 fn enable_logging() {

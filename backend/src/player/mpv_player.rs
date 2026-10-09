@@ -1,9 +1,7 @@
 use libmpv2::{Format, Mpv, events::PropertyData};
 
 use crate::{
-    data_view::TrackView,
-    db::models::{OrmUrl, Track},
-    player::{
+    data_view::TrackView, db::models::{OrmUrl, track::Track}, player::{
         self, Player, PlayerError, PlayerEvent, RepeatMode,
         mpv_player::{command::*, property::*},
     },

@@ -13,9 +13,7 @@ use crate::{
             errors::RequestError,
             normalize::Normalize,
         },
-    },
-    data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView},
-    db::sqlite::IndexableEndpoint,
+    }, data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView}, db::sqlite::indexable::IndexableEndpoint,
 };
 
 use async_trait::async_trait;

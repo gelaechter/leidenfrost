@@ -1,7 +1,6 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, rc::Rc, sync::Arc};
 
 use reqwest::StatusCode;
-use sea_orm::DbErr;
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -42,10 +41,16 @@ pub enum ApiError {
     DataNotFound,
     #[error("Cannot access database directory")]
     DbPathInaccessible,
-    #[error("Database Error: {0}")]
-    DbError(#[from] DbErr),
+    #[error("Database Error")]
+    DbError(Arc<sqlx::Error>),
     #[error("Async Error")]
     JoinError,
+}
+
+impl From<sqlx::Error> for ApiError {
+    fn from(value: sqlx::Error) -> Self {
+        Self::DbError(Arc::new(value))
+    }
 }
 
 impl From<reqwest::Error> for ApiError {

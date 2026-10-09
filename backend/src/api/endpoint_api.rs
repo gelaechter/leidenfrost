@@ -6,21 +6,20 @@ use std::{
 
 use async_trait::async_trait;
 use reqwest::RequestBuilder;
-use sea_orm::DeriveDisplay;
 use serde::{Deserialize, Serialize};
-use strum::EnumIter;
 use strum::IntoEnumIterator;
+use strum::{Display, EnumIter};
 use tokio::sync::{OnceCell, RwLock};
 use url::Url;
 
 use crate::{
     api::jellyfin::errors::ApiError,
     data_view::{AlbumView, ArtistView, GenreView, PlaylistView, TrackView},
-    db::sqlite::{EndpointDB, IndexableEndpoint},
+    db::sqlite::{EndpointDB, indexable::IndexableEndpoint},
 };
 
 /// The different Endpoints that are currently supported
-#[derive(Clone, Debug, PartialEq, DeriveDisplay)]
+#[derive(Clone, Debug, PartialEq, Display)]
 pub enum EndpointType {
     Jellyfin,
     // Navidrome,
@@ -55,6 +54,7 @@ pub enum SearchResult {
     Album(AlbumView),
     Playlist(PlaylistView),
     Genre(GenreView),
+    Artist(ArtistView),
     LyricMatch {
         matched_lyric: Option<String>,
         track: TrackView,
@@ -122,6 +122,7 @@ pub enum TrackSorting {
     Album,
     AlbumArtist,
     #[default]
+    Number,
     Title,
     Artist,
     Duration,
@@ -383,7 +384,7 @@ impl EndpointManager {
             EndpointKind::Indexable { indexing, endpoint } if *indexing => Some(endpoint.clone()),
             _ => None,
         }) {
-            indexable_endpoint.index_data(&manager.local_db.db).await;
+            indexable_endpoint.index_data(&manager.local_db.db).await.expect("Error during indexing:");
         }
 
         Ok(())
