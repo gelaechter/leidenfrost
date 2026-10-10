@@ -20,7 +20,6 @@ use iced::{
 };
 use uuid::Uuid;
 
-
 /// A table component
 pub struct Table<T, M> {
     /// The table rows
@@ -64,6 +63,10 @@ impl<T, M> Default for Table<T, M> {
     }
 }
 
+/// FIXME: Making changes to the table outside of the Iced loop, meaning outside
+/// of [`Table::update`] can cause data-races; This was discovered when making
+/// searches in the command palette which quickly causes a table to change thus
+/// invalidating a rows index and causing an `index out of bounds`
 impl<T, M> Table<T, M> {
     /// Grants a view into the data the table contains
     pub fn rows(&self) -> &Vec<Row<T>> {
@@ -563,7 +566,8 @@ where
             .padding(Padding::new(8.0))
             .clip(true)
             .align_x(col.align_x)
-            .align_y(col.align_y).into()
+            .align_y(col.align_y)
+            .into()
         });
 
         // Row button allowing selection

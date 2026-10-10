@@ -29,6 +29,7 @@ pub enum Message {
     ChangeContent(String),
     Result(PaletteResults),
     Toggle,
+    SetActive(bool),
     ChangeRoute(Route),
 }
 
@@ -99,6 +100,10 @@ impl CommandPalette {
                 Router::send(RouterMsg::ChangeRoute(route));
                 Task::none()
             }
+            Message::SetActive(active) => {
+                self.visible = active;
+                Task::none()
+            }
         }
     }
 
@@ -108,23 +113,26 @@ impl CommandPalette {
         }
 
         // Outer full size container
-        widget::center(
-            // Actual palette
-            widget::container(widget::column([
-                // Command input
-                widget::text_input("Enter command...", self.command.clone())
-                    .on_input(ChangeContent)
-                    .id(Self::INPUT_ID)
-                    .into(),
-                widget::space().height(8).into(),
-                // Results
-                widget::scrollable(self.view_results()).into(),
-            ]))
-            .style(container::bordered_box)
-            .height(Length::Fit.max(400))
-            .width(500),
+        widget::mouse_area(
+            widget::center(
+                // Actual palette
+                widget::container(widget::column([
+                    // Command input
+                    widget::text_input("Enter command...", self.command.clone())
+                        .on_input(ChangeContent)
+                        .id(Self::INPUT_ID)
+                        .into(),
+                    widget::space().height(8).into(),
+                    // Results
+                    widget::scrollable(self.view_results()).into(),
+                ]))
+                .style(container::bordered_box)
+                .height(Length::Fit.max(400))
+                .width(500),
+            )
+            .align_top(Length::Fill),
         )
-        .align_top(Length::Fill)
+        .on_press(Message::SetActive(false))
         .into()
     }
 
