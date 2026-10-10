@@ -1,4 +1,4 @@
-use crate::ui::Receiver;
+use crate::ui::{Receiver, components::track_table::TrackRow};
 use backend::data_view::TrackView;
 use iced::{Element, Task};
 use macros::Receiver;
@@ -84,7 +84,7 @@ impl Queue {
                 Task::none()
             },
             QueueMsg::AppendAll(track_views) => {
-                let rows = track_views.into_iter().map(Into::into).collect();
+                let rows: Vec<TrackRow> = track_views.into_iter().map(TrackRow::from).collect();
                 self.table.extend(rows);
                 Task::none()
             }

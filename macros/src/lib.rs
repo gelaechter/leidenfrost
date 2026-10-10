@@ -1,6 +1,6 @@
-//! This module implements the proc_macro_derive for the Receiver
+//! This module implements the derive macro for the Receiver
 //!
-//! The idea is that we can automatically generate a publich broadcast for each
+//! The idea is that we can automatically generate a public broadcast for each
 //! receiver and expose that broadcast through an associated `send` function.
 //!
 //! Each message we receive on that broadcast can then be received through

@@ -532,7 +532,7 @@ impl MusicEndpoint for EndpointDB {
             };
             out.push(SearchResult::LyricMatch {
                 matched_lyric: matched,
-                track: v,
+                track_view: v,
             });
         }
 

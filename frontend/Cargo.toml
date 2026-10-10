@@ -33,6 +33,7 @@ color-eyre.workspace = true
 reqwest.workspace = true
 log.workspace = true
 uuid.workspace = true
+strum.workspace = true
 
 [features]
 default = []

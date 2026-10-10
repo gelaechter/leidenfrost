@@ -1,4 +1,7 @@
 //! This module contains a bunch of helpers for creating SQL queries for sorting
+//!
+//! TODO: One thing to consider is that RANDOM with pagination currently makes
+//! no sense as the result will be randomize per page
 
 use crate::api::endpoint_api::{
     AlbumSorting, ArtistSorting, GenreSorting, Pagination, PlaylistSorting, Sort, SortOrder,

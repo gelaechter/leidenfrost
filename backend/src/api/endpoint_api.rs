@@ -49,6 +49,7 @@ pub trait ImageSize {
     fn set_image_resolution(request: RequestBuilder, width: u32, height: u32) -> RequestBuilder;
 }
 
+#[derive(Debug, Clone)]
 pub enum SearchResult {
     Track(TrackView),
     Album(AlbumView),
@@ -57,7 +58,7 @@ pub enum SearchResult {
     Artist(ArtistView),
     LyricMatch {
         matched_lyric: Option<String>,
-        track: TrackView,
+        track_view: TrackView,
     },
 }
 
@@ -384,7 +385,10 @@ impl EndpointManager {
             EndpointKind::Indexable { indexing, endpoint } if *indexing => Some(endpoint.clone()),
             _ => None,
         }) {
-            indexable_endpoint.index_data(&manager.local_db.db).await.expect("Error during indexing:");
+            indexable_endpoint
+                .index_data(&manager.local_db.db)
+                .await
+                .expect("Error during indexing:");
         }
 
         Ok(())

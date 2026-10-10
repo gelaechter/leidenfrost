@@ -2,9 +2,12 @@ pub mod endpoint_impl;
 pub mod indexable;
 pub mod sorting;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
-use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
+use sqlx::{
+    Pool, Sqlite,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+};
 
 use crate::{
     api::{endpoint_api::SearchResult, jellyfin::errors::ApiError},
@@ -12,9 +15,6 @@ use crate::{
 };
 
 type Result<T> = std::result::Result<T, ApiError>;
-
-// Read/Write/Create
-const MODE: &str = "rwc";
 
 /// The local database which acts as an index for endpoints
 #[derive(Debug, Clone)]
@@ -41,26 +41,24 @@ impl EndpointDB {
 
     /// Opens an sqlite db at the given db
     pub async fn open_with_path(path: PathBuf) -> Result<Self> {
-        let path = path
-            .into_string()
-            .map_err(|_| ApiError::DbPathInaccessible)?;
+        let opts = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            // See <https://www.sqlite.org/wal.html>
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal) // no fsync per commit, still crash-safe
+            .foreign_keys(true) // replaces the after_connect PRAGMA
+            .busy_timeout(Duration::from_secs(5))
+            // TODO: I should do some tests / some more reading on how to
+            .pragma("mmap_size", "536870912") // reads served from a RAM mapping
+            .pragma("cache_size", "-131072") // 128 MiB page cache
+            .pragma("temp_store", "MEMORY");
 
         // Open db
-        let db = SqlitePoolOptions::new()
-            .after_connect(|connection, _meta| {
-                Box::pin(async move {
-                    sqlx::query("PRAGMA foreign_keys = ON")
-                        .execute(connection)
-                        .await?;
-
-                    Ok(())
-                })
-            })
-            .connect(&format!("sqlite://{path}?mode={MODE}"))
-            .await?;
+        let db = SqlitePoolOptions::new().connect_with(opts).await?;
 
         // the migrations are relative the Cargo.toml
-        sqlx::migrate!("src/db/migrations").run(&db).await.unwrap();
+        sqlx::migrate!("src/db/migrations").run(&db).await.expect("migration error");
 
         Ok(EndpointDB { db })
     }

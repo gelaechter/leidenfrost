@@ -7,6 +7,7 @@ pub mod queue;
 pub mod router;
 pub mod sidebar;
 pub mod widgets;
+pub mod command_palette;
 
 use iced::Subscription;
 

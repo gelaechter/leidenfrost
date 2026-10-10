@@ -1,6 +1,9 @@
 pub mod albums;
+pub mod artists;
+pub mod genres;
 pub mod settings;
 pub mod tracks;
+pub mod playlists;
 
 use iced::{
     Element,
@@ -12,11 +15,16 @@ use iced::{
 use macros::Receiver;
 
 use crate::ui::{
-    Receiver, router::{
+    Receiver,
+    router::{
         albums::Albums,
+        artists::Artists,
+        genres::Genres,
         settings::{Settings, SettingsMsg},
         tracks::Tracks,
-    }, sidebar::{Sidebar, SidebarMsg}, widgets::tagged::tagged,
+    },
+    sidebar::{Sidebar, SidebarMsg},
+    widgets::tagged::tagged,
 };
 
 #[derive(Default, Receiver)]
@@ -27,6 +35,8 @@ pub struct Router {
     route: Route,
     tracks: Tracks,
     albums: Albums,
+    artists: Artists,
+    genres: Genres,
 }
 
 #[derive(Default, Clone, PartialEq, Eq, Debug)]
@@ -53,6 +63,8 @@ pub enum Msg {
     ChangeRoute(Route),
     TracksDriver(tracks::TracksMsg),
     AlbumsDriver(albums::Message),
+    ArtistsDriver(artists::Message),
+    GenresDriver(genres::Message),
     SettingsDriver(SettingsMsg),
 }
 
@@ -60,10 +72,7 @@ pub type RouterMsg = Msg;
 
 impl Router {
     pub fn view(&self) -> Element<'_, RouterMsg> {
-        struct Albums;
         struct Home;
-        struct Tracks;
-        struct Settings;
 
         /// Stores a view as well as a tag for use with [`tagged`]
         struct RouteView<'a> {
@@ -86,8 +95,14 @@ impl Router {
                 tag: Tag::of::<Tracks>(),
             },
             Route::AlbumArtists => todo!(),
-            Route::Artists => todo!(),
-            Route::Genres => todo!(),
+            Route::Artists => RouteView {
+                view: self.artists.view().map(Msg::ArtistsDriver),
+                tag: Tag::of::<Artists>(),
+            },
+            Route::Genres => RouteView {
+                view: self.genres.view().map(Msg::GenresDriver),
+                tag: Tag::of::<Genres>(),
+            },
             Route::Artist(_) => todo!(),
             Route::Genre(_) => todo!(),
             Route::Album(_) => todo!(),
@@ -116,7 +131,9 @@ impl Router {
             }
             Msg::TracksDriver(message) => self.tracks.update(message).map(Msg::TracksDriver),
             Msg::AlbumsDriver(message) => self.albums.update(message).map(Msg::AlbumsDriver),
-            Msg::SettingsDriver(icmsg) => self.settings.update(icmsg).map(Msg::SettingsDriver),
+            Msg::SettingsDriver(message) => self.settings.update(message).map(Msg::SettingsDriver),
+            Msg::ArtistsDriver(message) => self.artists.update(message).map(Msg::ArtistsDriver),
+            Msg::GenresDriver(message) => self.genres.update(message).map(Msg::GenresDriver),
         }
     }
 }

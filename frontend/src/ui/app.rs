@@ -5,8 +5,9 @@ use iced::{
     Length::Fill,
     Subscription, Task, Theme,
     keyboard::{self, Key, key::Named},
+    theme::palette,
     widget::{
-        column, container,
+        self,
         pane_grid::{Axis, Configuration, ResizeEvent},
     },
 };
@@ -15,6 +16,7 @@ use iced::widget::pane_grid;
 
 use crate::ui::{
     ReceiverContainer,
+    command_palette::{self, CommandPalette},
     player::{GenericPlayer, PlayerMsg},
     playerbar::{PlayerBar, PlayerBarMsg},
     queue::{self, Queue, QueueMsg},
@@ -34,6 +36,7 @@ pub struct App {
     queue: Queue,
     player: GenericPlayer,
     player_bar: PlayerBar,
+    command_palette: CommandPalette,
 }
 
 impl Default for App {
@@ -43,6 +46,7 @@ impl Default for App {
         let queue = Queue::default();
         let player = GenericPlayer::default();
         let player_bar = PlayerBar::default();
+        let command_palette = CommandPalette::default();
 
         // Creates a new pane state and immediately splits it
         let panes = pane_grid::State::<Pane>::with_configuration(Configuration::Split {
@@ -64,6 +68,7 @@ impl Default for App {
             queue,
             player,
             player_bar,
+            command_palette,
         }
     }
 }
@@ -92,6 +97,7 @@ pub enum Message {
     Player(Box<PlayerMsg>),
     PlayerBar(PlayerBarMsg),
     Settings(SettingsMsg),
+    CommandPalette(command_palette::Message),
 }
 
 impl From<PlayerMsg> for Message {
@@ -134,20 +140,27 @@ impl From<QueueMsg> for Message {
 impl App {
     pub fn view(&self) -> Element<'_, Message> {
         // Enclosing container
-        container(column![
-            // Pane grid consisting of sidebar, main window (router) and queue
-            pane_grid(&self.panes, |_pane, state, _is_maximized| {
-                pane_grid::Content::new(match state {
-                    Pane::Sidebar => self.sidebar.view().map(Message::Sidebar),
-                    Pane::Queue => self.queue.view().map(|m| Message::Queue(Box::new(m))),
-                    // The router view s
-                    Pane::Router => self.router.view().map(Message::Router),
+        widget::container(widget::stack([
+            // The base plane this contains the normal controls
+            widget::column([
+                // Pane grid consisting of sidebar, main window (router) and queue
+                pane_grid(&self.panes, |_pane, state, _is_maximized| {
+                    pane_grid::Content::new(match state {
+                        Pane::Sidebar => self.sidebar.view().map(Message::Sidebar),
+                        Pane::Queue => self.queue.view().map(|m| Message::Queue(Box::new(m))),
+                        // The router view s
+                        Pane::Router => self.router.view().map(Message::Router),
+                    })
                 })
-            })
-            .on_resize(10, Message::PaneResized),
-            // The player bar
-            self.player_bar.view().map(Message::PlayerBar)
-        ])
+                .on_resize(10, Message::PaneResized)
+                .into(),
+                // The player bar
+                self.player_bar.view().map(Message::PlayerBar),
+            ])
+            .into(),
+            // The command palette which floats above the base plane
+            self.command_palette.view().map(Message::CommandPalette),
+        ]))
         .height(Fill)
         .width(Fill)
         .into()
@@ -168,26 +181,36 @@ impl App {
                 .map(|m| Message::Queue(Box::new(m))),
             Message::Router(message) => self.router.update(message).map(Message::Router),
             Message::PlayerBar(message) => self.player_bar.update(message).map(Message::PlayerBar),
-            Message::KeyboardEvent(event) => match event {
-                keyboard::Event::KeyPressed {
-                    key: Key::Named(Named::F11),
-                    ..
-                } => Task::none(),
-                _ => Task::none(),
-            },
+            Message::KeyboardEvent(event) => {
+                log::debug!("Received keyboard event: {event:?}");
+                match event {
+                    keyboard::Event::KeyPressed {
+                        key: Key::Named(Named::F1),
+                        ..
+                    } => self
+                        .command_palette
+                        .update(command_palette::Message::Toggle)
+                        .map(Message::CommandPalette),
+                    _ => Task::none(),
+                }
+            }
             Message::Player(message) => {
                 self.player.update(*message);
                 Task::none()
             }
             Message::Settings(cmd) => self.router.settings.update(cmd).map(Message::Settings),
+            Message::CommandPalette(message) => self
+                .command_palette
+                .update(message)
+                .map(Message::CommandPalette),
         }
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
         // Register all the event receivers
-        let wa = inventory::iter::<ReceiverContainer>;
+        let receivers = inventory::iter::<ReceiverContainer>;
         let mut subscriptions: Vec<Subscription<Message>> =
-            wa.into_iter().map(|s| (s.0)()).collect();
+            receivers.into_iter().map(|s| (s.0)()).collect();
 
         subscriptions.extend([
             // Additional subscriptions
