@@ -80,22 +80,22 @@ impl Queue {
                 Task::none()
             }
             QueueMsg::Append(track_view) => {
-                self.table.push(track_view.into());
+                self.table.insert(track_view.into());
                 Task::none()
-            },
+            }
             QueueMsg::AppendAll(track_views) => {
                 let rows: Vec<TrackRow> = track_views.into_iter().map(TrackRow::from).collect();
                 self.table.extend(rows);
                 Task::none()
             }
             QueueMsg::QueueRemove(index) => {
-                self.table.rows_mut().remove(index);
+                self.table.remove_index(index);
                 Task::none()
             }
             QueueMsg::QueueMove { target, position } => {
-                let rows = self.table.rows_mut();
-                let row = rows.remove(target);
-                rows.insert(position, row);
+                if let Some(data) = self.table.remove_index(target) {
+                    self.table.insert_at(position, data);
+                }
                 Task::none()
             }
             QueueMsg::PlayIndex(index) => {

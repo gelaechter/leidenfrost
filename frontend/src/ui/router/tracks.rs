@@ -97,7 +97,7 @@ impl Tracks {
         match message.into() {
             Cmd::FetchTracks => {
                 // Only fetch first time
-                if !self.track_table.rows().is_empty() {
+                if !self.track_table.is_empty() {
                     return Task::none();
                 }
 

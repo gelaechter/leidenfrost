@@ -18,6 +18,7 @@ use iced::{
         row,
     },
 };
+use ordermap::OrderMap;
 use uuid::Uuid;
 
 /// A table component
@@ -25,7 +26,7 @@ pub struct Table<T, M> {
     /// The table rows
     ///
     /// These act as state, meaning every cell in a row shares one state
-    rows: Vec<Row<T>>,
+    rows: OrderMap<Uuid, Row<T>>,
     /// The table columns
     ///
     /// These dictate view, they define multiple ways to draw the state (the
@@ -40,6 +41,19 @@ pub struct Table<T, M> {
     double_click_callback: Option<fn(T)>,
 }
 
+impl<T, M> Default for Table<T, M> {
+    fn default() -> Self {
+        Self {
+            rows: OrderMap::new(),
+            columns: Vec::new(),
+            visible_chunks: HashSet::new(),
+            mouse_position: Point::default(),
+            resize_info: None,
+            double_click_callback: None,
+        }
+    }
+}
+
 pub struct ResizeInfo {
     /// Point where something started to get dragged
     drag_point: Point,
@@ -49,49 +63,42 @@ pub struct ResizeInfo {
     size_before: f32,
 }
 
-// Deriving default requires T and M implementing Default as well
-impl<T, M> Default for Table<T, M> {
-    fn default() -> Self {
-        Self {
-            rows: Vec::default(),
-            columns: Vec::default(),
-            mouse_position: Point::default(),
-            resize_info: Option::default(),
-            visible_chunks: HashSet::default(),
-            double_click_callback: None,
-        }
-    }
-}
-
 /// FIXME: Making changes to the table outside of the Iced loop, meaning outside
 /// of [`Table::update`] can cause data-races; This was discovered when making
 /// searches in the command palette which quickly causes a table to change thus
 /// invalidating a rows index and causing an `index out of bounds`
 impl<T, M> Table<T, M> {
-    /// Grants a view into the data the table contains
-    pub fn rows(&self) -> &Vec<Row<T>> {
-        &self.rows
+    pub fn is_empty(&self) -> bool {
+        self.rows.is_empty()
     }
 
-    /// Grants a mutable view into the data the table contains
-    pub fn rows_mut(&mut self) -> &mut Vec<Row<T>> {
-        &mut self.rows
+    /// Adds a piece of data, hence a new row, to the table
+    pub fn insert(&mut self, data: T) {
+        let id = Uuid::new_v4();
+        self.rows.insert(id, Row::new(data));
+    }
+
+    pub fn insert_at(&mut self, index: usize, item: T) {
+        let id: Uuid = Uuid::new_v4();
+        self.rows.shift_insert(index, id, Row::new(item));
+    }
+
+    /// Extends the table data
+    pub fn extend(&mut self, rows: impl IntoIterator<Item = T>) {
+        self.rows.extend(rows.into_iter().map(|data| {
+            let id = Uuid::new_v4();
+
+            (id, Row::new(data))
+        }));
+    }
+
+    pub fn remove_index(&mut self, index: usize) -> Option<T> {
+        self.rows.remove_index(index).map(|(_uuid, row)| row.item)
     }
 
     /// Clears the table data
     pub fn clear(&mut self) {
         self.rows.clear();
-    }
-
-    /// Adds a piece of data, hence a new row, to the table
-    pub fn push(&mut self, data: T) {
-        self.rows.push(Row::new(data));
-    }
-
-    /// Extends the table data
-    pub fn extend(&mut self, rows: impl IntoIterator<Item = T>) {
-        let rows: Vec<Row<T>> = rows.into_iter().map(Row::new).collect();
-        self.rows.extend(rows);
     }
 
     /// Adds an additional column to the table
@@ -108,9 +115,9 @@ impl<T, M> Table<T, M> {
 }
 
 pub struct Row<T> {
-    /// A random ID used to key the rows, this way we can prevent different rows
-    /// from being merged during a DOM diff
-    id: Uuid,
+    // /// A random ID used to key the rows, this way we can prevent different rows
+    // /// from being merged during a DOM diff
+    // id: Uuid,
     item: T,
     /// Is the row currently visible?
     visible: bool,
@@ -126,7 +133,6 @@ pub struct Row<T> {
 impl<T> Row<T> {
     pub fn new(item: T) -> Self {
         Row {
-            id: Uuid::new_v4(),
             item,
             visible: false,
             selected: false,
@@ -165,7 +171,8 @@ pub struct Column<T, M> {
     width: Length,
     /// The minimal absolute width for this column
     min_width: f32,
-    /// Marker for if the
+    /// Marker for whether this column was initially sized relatively (by
+    /// portion), so it can be restored that way after a resize
     relative_sized: bool,
     /// The current measured width of the column
     measured_width: f32,
@@ -188,7 +195,8 @@ impl<T, M> Column<T, M> {
             width: FillPortion(1),
             measured_width: 0.0,
             on_grab_area: false,
-            relative_sized: false,
+            // The default width is a portion, so this is a relative column
+            relative_sized: true,
             min_width: 64.0,
         }
     }
@@ -211,7 +219,7 @@ impl<T, M> Column<T, M> {
         self
     }
 
-    /// Sets initial width of this column
+    /// Sets the initial width of this column
     pub fn intial_width(mut self, width: Length) -> Self {
         self.relative_sized = match width {
             FillPortion(_) => true,
@@ -236,14 +244,20 @@ impl<T, M> Column<T, M> {
 
 #[derive(Debug, Clone)]
 pub enum Message<M: Clone> {
-    /// Row visibility
-    RowShown(usize),
-    RowHidden(usize),
+    /// Row visibility, identified by row id
+    RowShown(Uuid),
+    RowHidden(Uuid),
     /// Chunk visibility
     ChunkShown(usize),
     ChunkHidden(usize),
     /// Driver for column content
-    ColumnDriver(usize, usize, M),
+    ///
+    /// The row is identified by its id
+    ColumnDriver {
+        id: Uuid,
+        col_idx: usize,
+        message: M,
+    },
     /// Mouse events
     MouseMoved(Point),
     MousePressed,
@@ -252,7 +266,8 @@ pub enum Message<M: Clone> {
     None,
     /// Notification on column size change
     MeasureColumn(usize, Size),
-    RowClicked(usize),
+    /// A row was clicked, identified by row id
+    RowClicked(Uuid),
 }
 
 /// The height one row of the track table has
@@ -263,6 +278,8 @@ const ROW_HEIGHT: u32 = 64 + 8;
 const ANTICIPATED_ROWS: u32 = 2;
 /// The amount of rows per chunk
 const CHUNK_SIZE: usize = 100;
+/// How long between two clicks a double click is registered
+const DOUBLE_CLICK_WINDOW: Duration = Duration::from_millis(200);
 
 /// A table message defined by
 /// - T: The table data type
@@ -299,12 +316,16 @@ where
 
     pub fn update(&mut self, message: impl Into<TableMsg<M>>) -> Task<TableMsg<M>> {
         match message.into() {
-            Message::RowShown(row_idx) => {
-                self.rows[row_idx].visible = true;
+            Message::RowShown(id) => {
+                if let Some(get_mut) = self.rows.get_mut(&id) {
+                    get_mut.visible = true;
+                }
                 Task::none()
             }
-            Message::RowHidden(row_idx) => {
-                self.rows[row_idx].visible = false;
+            Message::RowHidden(id) => {
+                if let Some(get_mut) = self.rows.get_mut(&id) {
+                    get_mut.visible = false;
+                }
                 Task::none()
             }
             Message::ChunkShown(chunk_idx) => {
@@ -315,12 +336,25 @@ where
                 self.visible_chunks.remove(&chunk_idx);
                 Task::none()
             }
-            Message::ColumnDriver(row_idx, col_id, message) => {
-                let row = &mut self.rows[row_idx];
-                let col = &self.columns[col_id];
+            Message::ColumnDriver {
+                id,
+                col_idx,
+                message,
+            } => {
+                let Some(col) = self.columns.get(col_idx) else {
+                    return Task::none();
+                };
+                // Resolve the row by identity; the index is just a hint
+                let Some(row) = self.rows.get_mut(&id) else {
+                    // Row no longer exists; drop the stale message
+                    return Task::none();
+                };
 
-                (col.update)(&mut row.item, message)
-                    .map(move |m| Message::ColumnDriver(row_idx, col_id, m))
+                (col.update)(&mut row.item, message).map(move |message| Message::ColumnDriver {
+                    id,
+                    col_idx,
+                    message,
+                })
             }
             Message::None => Task::none(),
             Message::MouseMoved(position) => {
@@ -367,7 +401,9 @@ where
 
                 // Let the last column fill the rest of the space left when resizing the
                 // second-to-last column
-                if resizing_col == self.columns.len() - 2
+                // (written as `resizing_col + 2 == len` because `len() - 2`
+                // would underflow for a single-column table)
+                if resizing_col + 2 == self.columns.len()
                     && let Some(col) = self.columns.last_mut()
                 {
                     // Go on; show me a screen with a width larger than 65536 pixels
@@ -402,24 +438,31 @@ where
                     Task::done(Message::MouseReleased)
                 }
             }
-            Message::RowClicked(idx) => {
-                let row = &mut self.rows[idx];
+            Message::RowClicked(id) => {
+                let Some(row) = self.rows.get_mut(&id) else {
+                    return Task::none();
+                };
+
+                let now = Instant::now();
                 row.selected = true;
 
-                // Check if the row was clicked less than 200ms ago
-                if let Some(instant) = row.clicked_at
-                    && Instant::now().duration_since(instant) <= Duration::from_millis(200)
+                // Check if the row was clicked less than `DOUBLE_CLICK_WINDOW` ago
+                let is_double_click = row
+                    .clicked_at
+                    .is_some_and(|instant| now.duration_since(instant) <= DOUBLE_CLICK_WINDOW);
+                row.clicked_at = Some(now);
+
+                if is_double_click
                     // Is a callback registered?
                     && let Some(double_click_callback) = self.double_click_callback
                 {
                     log::debug!("Calling double click callback");
                     double_click_callback(row.item.clone());
                 }
-                row.clicked_at = Some(Instant::now());
 
                 // Deselect all other rows
-                for (index, row) in self.rows.iter_mut().enumerate() {
-                    row.selected = index == idx;
+                for (key, state) in self.rows.iter_mut() {
+                    state.selected = *key == id;
                 }
 
                 Task::none()
@@ -503,33 +546,34 @@ where
     ///
     /// TODO: refactor this (it reads like shit)
     pub fn sliding_window(&self) -> Element<'_, TableMsg<M>> {
+        let entries: Vec<(&Uuid, &Row<T>)> = self.rows.iter().collect();
+
         // Split the rows into chunks of size CHUNK_ROWS
-        let rows = self
-            .rows
+        let rows = entries
             .chunks(CHUNK_SIZE)
             .enumerate()
             .map(|(chunk_idx, chunk)| {
                 // Check if the chunk is visible
                 let chunk: Element<'_, TableMsg<M>> = if self.visible_chunks.contains(&chunk_idx) {
-                    widget::column(chunk.iter().enumerate().map(|(row_idx, row)| {
-                        // Calculate proper row index with
-                        let key = row.id;
-                        let row_idx = row_idx + chunk_idx * CHUNK_SIZE;
-                        let row = if row.visible {
-                            // Row is visible so produce the row
-                            self.item_row(row_idx, row)
-                        } else {
-                            // Row is invisible so produce a placeholder
-                            widget::space().width(Fill).height(ROW_HEIGHT).into()
-                        };
+                    widget::column(chunk.iter().enumerate().map(|(i, (id, row))| {
+                        let id: Uuid = **id;
+                        let row: Element<'_, TableMsg<M>> =
+                            if self.rows.get(&id).is_some_and(|state| state.visible) {
+                                // Row is visible so produce the row
+                                self.item_row(id, row)
+                            } else {
+                                // Row is invisible (or not yet seen) so
+                                // produce a placeholder
+                                widget::space().width(Fill).height(ROW_HEIGHT).into()
+                            };
 
                         // Wrap the row with a sensor to watch if it's visible
                         widget::sensor(row)
                             .anticipate(ANTICIPATED_ROWS * ROW_HEIGHT)
                             // row visibility should not be kept when recalculating the layout
-                            .key(key)
-                            .on_show(move |_| Message::RowShown(row_idx))
-                            .on_hide(Message::RowHidden(row_idx))
+                            .key(id)
+                            .on_show(move |_| Message::RowShown(id))
+                            .on_hide(Message::RowHidden(id))
                             .into()
                     }))
                     .into()
@@ -555,11 +599,15 @@ where
     }
 
     /// A row showing all the columns for an item T
-    pub fn item_row<'a>(&self, row_idx: usize, row: &'a Row<T>) -> Element<'a, TableMsg<M>> {
+    pub fn item_row<'a>(&self, id: Uuid, row: &'a Row<T>) -> Element<'a, TableMsg<M>> {
         // The columns
         let columns = self.columns.iter().enumerate().map(|(col_idx, col)| {
             widget::container(
-                (col.view)(&row.item).map(move |m| Message::ColumnDriver(row_idx, col_idx, m)),
+                (col.view)(&row.item).map(move |message| Message::ColumnDriver {
+                    id,
+                    col_idx,
+                    message,
+                }),
             )
             .width(col.measured_width - 2.0)
             .height(ROW_HEIGHT)
@@ -589,7 +637,7 @@ where
             })
             .height(ROW_HEIGHT)
             .padding(Padding::new(0.0))
-            .on_press(Message::RowClicked(row_idx))
+            .on_press(Message::RowClicked(id))
             .width(Fill)
             .into()
     }

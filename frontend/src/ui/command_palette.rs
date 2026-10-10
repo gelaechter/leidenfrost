@@ -1,4 +1,4 @@
-use backend::api::endpoint_api::{EndpointManager, Pagination, SearchParams, SearchResult};
+use backend::api::endpoint_api::{EndpointManager, Pagination, SearchParams};
 use iced::{
     Background, Element, Length, Task,
     widget::{self, Id, button, container},
@@ -78,8 +78,7 @@ impl CommandPalette {
             Message::Result(palette_result) => {
                 if let PaletteResults::SearchResults(ref search_results) = palette_result {
                     self.search_result_table.clear();
-                    self.search_result_table
-                        .extend(search_results.iter().cloned().map(SearchRow::from));
+                    self.search_result_table.extend(search_results.clone());
                 }
                 self.result = palette_result;
                 Task::none()
@@ -215,7 +214,7 @@ fn search_everything(search_term: String) -> Task<Message> {
     })
     .then(|search_results| {
         Task::done(Message::Result(PaletteResults::SearchResults(
-            search_results,
+            search_results.into_iter().map(SearchRow::from).collect(),
         )))
     })
 }
@@ -235,7 +234,7 @@ pub enum SearchableRoute {
 pub enum PaletteResults {
     #[default]
     Empty,
-    SearchResults(Vec<SearchResult>),
+    SearchResults(Vec<SearchRow>),
     Routes(Vec<SearchableRoute>),
     NoResults,
 }

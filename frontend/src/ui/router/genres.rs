@@ -73,7 +73,7 @@ impl Genres {
         match message {
             Message::FetchGenres => {
                 // Only fetch first time
-                if !self.genre_table.rows().is_empty() {
+                if !self.genre_table.is_empty() {
                     return Task::none();
                 }
 
@@ -102,7 +102,9 @@ impl Genres {
                 self.genre_table.extend(row_data);
                 Task::none()
             }
-            Message::TableDriver(m) => self.genre_table.update(m).map(Message::TableDriver),
+            Message::TableDriver(message) => {
+                self.genre_table.update(message).map(Message::TableDriver)
+            }
             Message::PlayAllGenres => Task::none(),
         }
     }

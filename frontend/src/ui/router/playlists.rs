@@ -18,6 +18,7 @@ use backend::{
     api::endpoint_api::{EndpointManager, GetPlaylistsParams, Pagination},
     data_view::PlaylistView,
 };
+use uuid::Uuid;
 
 use crate::ui::{
     components::{
@@ -73,7 +74,7 @@ impl Playlists {
         match message {
             Message::FetchPlaylists => {
                 // Only fetch first time
-                if !self.playlist_table.rows().is_empty() {
+                if !self.playlist_table.is_empty() {
                     return Task::none();
                 }
 

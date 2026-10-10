@@ -75,7 +75,7 @@ impl Albums {
         match message {
             Message::FetchAlbums => {
                 // Only fetch first time
-                if !self.album_table.rows().is_empty() {
+                if !self.album_table.is_empty() {
                     return Task::none();
                 }
 

@@ -75,7 +75,7 @@ impl Artists {
         match message {
             Message::FetchArtists => {
                 // Only fetch first time
-                if !self.artist_table.rows().is_empty() {
+                if !self.artist_table.is_empty() {
                     return Task::none();
                 }
 
@@ -182,7 +182,7 @@ pub fn combined_title_column() -> Column<ArtistRow, ArtistCellMsg> {
                 image.view().map(ArtistCellMsg::ImageDriver)
             } else {
                 // Or show a placeholder
-                icons::disc().size(18).into()
+                icons::user().size(18).into()
             };
 
             // Artist name

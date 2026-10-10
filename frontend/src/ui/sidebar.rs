@@ -33,19 +33,34 @@ use crate::ui::{
 #[message(SidebarMsg)]
 pub struct Sidebar {
     route: Route,
-    playlists: Vec<PlaylistView>,
-    images: image::Manager,
+    playlists: Vec<SidebarPlaylist>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SidebarPlaylist {
+    view: PlaylistView,
+    image: Option<Image>,
 }
 
 #[derive(Clone, Debug)]
 pub enum Cmd {
     FetchPlaylists,
-    PlaylistsFetched(Vec<PlaylistView>),
-    ImageDriver(image::Message),
+    ImageDriver((usize, image::ImgMsg)),
     /// The route has changed
     RouteChanged(Route),
     /// Updates the route by notifying th router
     NotifyRouter(Route),
+    PlaylistsFetched(Vec<SidebarPlaylist>),
+}
+
+impl From<PlaylistView> for SidebarPlaylist {
+    fn from(view: PlaylistView) -> Self {
+        let url = view.playlist.image_url.clone();
+        let blurhash = view.playlist.image_blur_hash.clone();
+        let image = url.map(|url| Image::new(url).blurhash_maybe(blurhash));
+
+        Self { view, image }
+    }
 }
 
 pub type SidebarMsg = Cmd;
@@ -98,26 +113,20 @@ impl Sidebar {
                         // TODO: Replace with global state
                         let endpoint = EndpointManager::get_active_endpoint().await.unwrap();
 
-                        endpoint
+                        let playlists = endpoint
                             .get_playlists(GetPlaylistsParams::default())
                             .await
-                            .unwrap()
+                            .unwrap();
+
+                        playlists.into_iter().map(SidebarPlaylist::from).collect()
                     },
                     Cmd::PlaylistsFetched,
                 )
             }
             Cmd::PlaylistsFetched(playlist_views) => {
-                // Load images
-                self.images.insert(playlist_views.iter().filter_map(|view| {
-                    let url = view.playlist.image_url.clone();
-                    let blurhash = view.playlist.image_blur_hash.clone();
-                    url.map(|url| Image::new(url).blurhash_maybe(blurhash))
-                }));
-
                 self.playlists = playlist_views;
                 Task::none()
             }
-            Cmd::ImageDriver(m) => self.images.update(m).map(Cmd::ImageDriver),
             Cmd::RouteChanged(route) => {
                 self.route = route;
                 Task::none()
@@ -126,6 +135,17 @@ impl Sidebar {
                 use super::router;
                 router::Router::send(router::RouterMsg::ChangeRoute(route));
                 Task::none()
+            }
+            Cmd::ImageDriver((idx, message)) => {
+                if let Some(get_mut) = self.playlists.get_mut(idx)
+                    && let Some(ref mut image) = get_mut.image
+                {
+                    image
+                        .update(message)
+                        .map(move |m| Cmd::ImageDriver((idx, m)))
+                } else {
+                    Task::none()
+                }
             }
         }
     }
@@ -170,20 +190,23 @@ impl Sidebar {
     }
 
     pub fn playlists(&self) -> Element<'_, SidebarMsg> {
-        let playlists = self.playlists.iter().map(|view| {
-            let image = if let Some(image_url) = view.playlist.image_url.as_ref()
-                && let Some(image) = self.images.view(image_url)
-            {
-                // Show an image if it's ready
-                image.map(Cmd::ImageDriver)
+        let playlists = self.playlists.iter().enumerate().map(|(idx, data)| {
+            let image = if let Some(ref image) = data.image {
+                image.view().map(move |msg| Cmd::ImageDriver((idx, msg)))
             } else {
                 // Or show a placeholder
                 icons::disc().size(18).into()
             };
 
-            let title = widget::text(view.playlist.name.clone().unwrap_or("No title".to_owned()))
-                .wrapping(Wrapping::None)
-                .ellipsis(text::Ellipsis::End);
+            let title = widget::text(
+                data.view
+                    .playlist
+                    .name
+                    .clone()
+                    .unwrap_or("No title".to_owned()),
+            )
+            .wrapping(Wrapping::None)
+            .ellipsis(text::Ellipsis::End);
 
             row![
                 widget::container(image).center(64),

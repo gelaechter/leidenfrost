@@ -1,4 +1,4 @@
-//! A track table as used in the tracks view and queue
+//! A search table as used in the search view and command palette
 
 use std::time::Duration;
 
@@ -11,6 +11,7 @@ use crate::ui::{
         table::{Column, Table, TableMsg},
         track_table::{self, TrackCellMsg, TrackRow},
     },
+    player::{GenericPlayer, PlayerMsg},
     router::{
         Route, Router, RouterMsg,
         albums::{self, AlbumCellMsg, AlbumRow},
@@ -78,7 +79,7 @@ pub fn combined_lyrics_column() -> Column<LyricsRow, LyricsCellMsg> {
         || widget::void().into(),
         |row: &LyricsRow| {
             let LyricsRow {
-                view: TrackView { track, artists, .. },
+                view: TrackView { track, .. },
                 image,
                 matched_lyric,
             } = row;
@@ -175,13 +176,27 @@ impl From<SearchResult> for SearchRow {
 }
 
 pub fn search_table() -> SearchTable {
-    Table::default()
+    Table::default().on_double_click_row(|row| {
+        log::debug!("Double clicked search table row");
+        match row {
+            SearchRow::Track(track_row) => GenericPlayer::send(PlayerMsg::Play(track_row.view)),
+            // Navigate to the artist
+            SearchRow::Artist(artist_row) => Router::send(RouterMsg::ChangeRoute(Route::Artist(
+                artist_row.view.artist.id.clone(),
+            ))),
+            SearchRow::Album(album_row) => todo!(),
+            SearchRow::Playlist(playlist_row) => todo!(),
+            SearchRow::Genre(genre_row) => todo!(),
+            SearchRow::Lyric(lyrics_row) => todo!(),
+        }
+    })
 }
 
-/// A column that combines an image, and the name of the genre
+/// A column that shows a row depending on the [`SearchRow`] content
 pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
     Column::new(
         || widget::void().into(),
+        // Show the combined title for each entry
         |row: &SearchRow| match row {
             SearchRow::Track(track_row) => track_table::combined_title_column()
                 .view(track_row)
@@ -198,6 +213,7 @@ pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
             SearchRow::Genre(genre_row) => genres::combined_title_column()
                 .view(genre_row)
                 .map(SearchCellMsg::Genre),
+            // The lyric entry needs a custom display
             SearchRow::Lyric(lyrics_row) => combined_lyrics_column()
                 .view(lyrics_row)
                 .map(SearchCellMsg::Lyric),
@@ -280,14 +296,17 @@ pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
                     .as_mut()
                     .unwrap()
                     .update(img_msg)
-                    .map(TrackCellMsg::ImageDriver)
-                    .map(SearchCellMsg::Track),
+                    .map(LyricsCellMsg::ImageDriver)
+                    .map(SearchCellMsg::Lyric),
                 LyricsCellMsg::ChangeRoute(route) => {
                     Router::send(RouterMsg::ChangeRoute(route));
                     Task::none()
                 }
             },
-            _ => panic!("Invalid row/message combination"),
+            // All other combinations
+            (row_data, message) => {
+                panic!("Invalid row/message combination: {row_data:?}, {message:?}")
+            }
         }
     })
     .intial_width(Length::FillPortion(2))

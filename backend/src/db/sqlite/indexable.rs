@@ -41,8 +41,7 @@ macro_rules! upsert {
             qb.push($table).push(" (").push($key);
             $( qb.push(", ").push($col); )+
             qb.push(")");
-            // push_values passes (&mut QueryBuilder, &row) — builder FIRST,
-            // matching both the pattern above and the call-site closures.
+            // push_values passes (&mut QueryBuilder, &row)
             qb.push_values(rows, |mut $b, $row| $body);
             qb.push(" ON CONFLICT(").push($key).push(") DO UPDATE SET ");
             let mut sets = qb.separated(", ");
