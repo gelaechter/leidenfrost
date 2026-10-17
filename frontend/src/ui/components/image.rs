@@ -1,14 +1,17 @@
-use iced::{
-    Alignment::Center, Border, Color, ContentFit, Element, Length::{self}, Size, Task, advanced::Widget, border::{self, Radius}, task::{self}, widget::{
-        self, container,
-        image::{self},
-    },
-};
 use std::{
     collections::HashMap,
     fmt, io,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, RwLock},
     time::Duration,
+};
+
+use bytes::Bytes;
+use iced::{
+    Alignment::Center,
+    Border, Color, ContentFit, Element, Length, Size, Task,
+    border::{self, Radius},
+    task,
+    widget::{self, container, image},
 };
 use url::Url;
 use uuid::Uuid;
@@ -17,71 +20,244 @@ use crate::ui::components::icons;
 
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
-#[derive(Default)]
-pub struct Manager {
-    images: HashMap<Uuid, Image>,
+/// Everything which is shared between all instances of the same image URL
+#[derive(Debug, Clone, Default)]
+pub struct ImageState {
+    /// Handle of any running image download task
+    pub download_task: Option<task::Handle>,
+    /// Handle of any running blurhash decoding task
+    pub blurhash_task: Option<task::Handle>,
+    /// How many image instances are currently visible on screen
+    pub visible: usize,
+    /// The currently allocated image data (if any)
+    pub content: Option<Content>,
 }
 
-#[derive(Debug, Clone)]
-pub enum Message {
-    ImageDriver(Uuid, ImgMsg),
-}
+impl ImageState {
+    /// Sets a new download task handle, aborting any previous download
+    pub(super) fn set_download_task(&mut self, handle: task::Handle) {
+        // Abort previous download (if any)
+        if let Some(previous) = self.download_task.take() {
+            previous.abort();
+        }
 
-impl Manager {
-    fn uuid(url: &Url) -> Uuid {
-        Uuid::new_v3(
-            &Uuid::NAMESPACE_URL,
-            // TODO: Only use base-path / disregard any queries
-            url.as_str().as_bytes(),
-        )
+        self.download_task = Some(handle);
     }
 
-    pub fn new() -> Self {
-        Self::default()
+    /// Sets a new blurhash task handle, aborting any previous decoding
+    pub(super) fn set_blurhash_task(&mut self, handle: task::Handle) {
+        // Abort previous task (if any)
+        if let Some(previous) = self.blurhash_task.take() {
+            previous.abort();
+        }
+
+        self.blurhash_task = Some(handle);
     }
 
-    pub fn insert<I>(&mut self, images: I)
-    where
-        I: IntoIterator<Item = Image>,
-    {
-        self.images.extend(
-            images
-                .into_iter()
-                .map(|image| (Self::uuid(&image.url), image)),
-        );
-    }
+    /// The download task has concluded: drop its handle and
+    /// abort any still running blurhash decoding
+    pub(super) fn conclude_download(&mut self) {
+        self.download_task = None;
 
-    pub fn view<'a>(&self, url: impl Into<&'a Url>) -> Option<Element<'_, Message>> {
-        let uuid = Self::uuid(url.into());
-        self.images
-            .get(&uuid)
-            .map(move |image| image.view().map(move |m| Message::ImageDriver(uuid, m)))
-    }
-
-    pub fn update(&mut self, message: Message) -> Task<Message> {
-        match message {
-            Message::ImageDriver(uuid, image_message) => {
-                if let Some(image) = self.images.get_mut(&uuid) {
-                    image
-                        .update(image_message)
-                        .map(move |m| Message::ImageDriver(uuid, m))
-                } else {
-                    log::warn!(
-                        "Received message {image_message:?} in event loop for non-existing image {uuid:?}"
-                    );
-                    Task::none()
-                }
-            }
+        // The download has concluded so abort blurhash decoding
+        if let Some(handle) = self.blurhash_task.take() {
+            handle.abort();
         }
     }
+
+    /// The blurhash task has concluded: drop its handle
+    pub(super) fn conclude_blurhash(&mut self) {
+        self.blurhash_task = None;
+    }
+}
+
+/// The content which is currently present for an image
+#[derive(Debug, Clone)]
+pub enum Content {
+    /// A decoded blurhash placeholder
+    Blurhash(image::Handle),
+    /// The full image
+    Full(image::Handle),
+    /// Loading the image failed
+    Error,
+}
+
+/// The store holding the state of all images, keyed by their UUID.
+///
+/// It can be accessed using [`Store::global`]
+#[derive(Default)]
+struct Store {
+    states: RwLock<HashMap<Uuid, ImageState>>,
+}
+
+impl Store {
+    /// The global image store
+    pub fn global() -> &'static Self {
+        static STORE: LazyLock<Store> = LazyLock::new(Store::default);
+        &STORE
+    }
+
+    /// Returns a snapshot of the state of the image.
+    ///
+    /// Unlike before, this is a read-only lookup — it neither takes the write
+    /// lock nor creates an empty entry for images which never did anything.
+    pub fn get(&self, uuid: Uuid) -> ImageState {
+        self.states
+            .read()
+            .expect("Image store poisoned")
+            .get(&uuid)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Mutates the state of the image, creating the entry if necessary
+    pub fn mutate<R>(&self, uuid: Uuid, f: impl FnOnce(&mut ImageState) -> R) -> R {
+        let mut states = self.states.write().expect("Image store poisoned");
+        f(states.entry(uuid).or_default())
+    }
+
+    /// Stores new content for the image
+    pub fn insert(&self, uuid: Uuid, content: Content) {
+        self.mutate(uuid, |state| state.content = Some(content));
+    }
+
+    /// Registers that another instance of the image became visible
+    pub fn show(&self, uuid: Uuid) {
+        self.mutate(uuid, |state| state.visible += 1);
+    }
+
+    /// Registers that an instance of the image was hidden.
+    ///
+    /// If the image is hidden before it was fully downloaded, the download is
+    /// aborted, but only once the last visible instance is gone, so that
+    /// multiple instances of the same URL don't kill each other's download.
+    pub fn hide(&self, uuid: Uuid) {
+        self.mutate(uuid, |state| {
+            state.visible = state.visible.saturating_sub(1);
+
+            if state.visible == 0
+                && let Some(handle) = state.download_task.take()
+            {
+                handle.abort();
+            }
+        });
+    }
+
+    /// Spawns the download of the image at the given URL, replacing
+    /// any previously running download for the same image
+    pub fn download_task(
+        &self,
+        uuid: Uuid,
+        url: Url,
+        measured_size: Size,
+        resolution_strategy: Option<fn(Url, Size) -> Url>,
+    ) -> Task<ImgMsg> {
+        let (task, handle) = Task::future(download(url, measured_size, resolution_strategy))
+            .and_then(|bytes| {
+                // After downloading directly allocate the image so we only start
+                // overwriting the Blurhashes once the image is fully allocated.
+                // This way we get a guarantee that the image is actually drawn once
+                // we replace the Blurhash, instead of being deferred to the renderer.
+                //
+                // > [`image::allocate`]:
+                // > When you obtain an Allocation explicitly, you get the guarantee that
+                // > using a Handle will draw the corresponding image immediately in the
+                // > next frame.
+                image::allocate(image::Handle::from_bytes(bytes))
+                    .map_err(|_| Error::ImageDecodingFailed)
+            })
+            .and_then(|a| Task::done(Ok(a.handle().clone())))
+            .map(ImgMsg::ImageDownloaded)
+            .abortable();
+
+        self.mutate(uuid, |state| {
+            state.set_download_task(handle.abort_on_drop());
+        });
+
+        task
+    }
+
+    /// Spawns the decoding of the image's blurhash placeholder, replacing
+    /// any previously running decoding for the same image
+    pub fn blurhash_task(&self, uuid: Uuid, blurhash: String, measured_size: Size) -> Task<ImgMsg> {
+        let (task, handle) = Task::future(decode_blurhash(blurhash, measured_size))
+            .and_then(|rgba| {
+                let Rgba {
+                    width,
+                    height,
+                    pixels,
+                } = rgba;
+
+                Task::done(Ok(
+                    // Unlike the download task this time we only create the handle
+                    // and defer the allocation to the renderer. This way we can
+                    // decode all blurhashes as fast as possible without blocking
+                    // ourselves by also allocating them.
+                    image::Handle::from_rgba(width, height, pixels),
+                ))
+            })
+            .map(ImgMsg::BlurhashDecoded)
+            .abortable();
+
+        self.mutate(uuid, |state| {
+            state.set_blurhash_task(handle.abort_on_drop());
+        });
+
+        task
+    }
+}
+
+/// Asynchronously downloads the image from the URL,
+/// automatically downloading a sized version based on the resolution strategy
+async fn download(
+    url: Url,
+    measured_size: Size,
+    resolution_strategy: Option<fn(Url, Size) -> Url>,
+) -> Result<Bytes, Error> {
+    // Change the image URL to be sized if there is a resolution strategy available
+    let url = if let Some(resize_strat) = resolution_strategy {
+        resize_strat(url, measured_size)
+    } else {
+        url
+    };
+
+    let request = CLIENT.get(url);
+    let bytes = request.send().await?.error_for_status()?.bytes().await?;
+
+    Ok(bytes)
+}
+
+/// Asynchronously decodes the blurhash for the given size
+#[allow(clippy::cast_possible_truncation)] // the resol are relatively small
+#[allow(clippy::cast_sign_loss)] // And they shouldn't be negative either
+async fn decode_blurhash(blurhash: String, size: Size) -> Result<Rgba, Error> {
+    let width = size.width.round() as u32;
+    let height = size.height.round() as u32;
+
+    // Decode the blurhash (this is a blocking operation)
+    tokio::task::spawn_blocking(move || {
+        let pixels = blurhash::decode(&blurhash, width, height, 1.0)?;
+
+        Ok(Rgba {
+            width,
+            height,
+            pixels: pixels.into(),
+        })
+    })
+    .await?
 }
 
 /// A network image which automatically fetches the image data from a given URL
+///
+/// This struct only holds the *configuration* of the image. All state — the
+/// downloaded content, running tasks and visibility — is stored per-URL in
+/// the global [`Store`] and shared between every instance of the same image.
 #[derive(Debug, Clone)]
 pub struct Image {
     /// The Url of this image
-    /// TODO: Add a global Handle cache for Urls that are the same.
     url: Url,
+    /// The [`Uuid`] of this image, derived from its URL.
+    uuid: Uuid,
     /// The height of the image.
     ///
     /// This specifies the height of the container around the image. The image
@@ -95,9 +271,14 @@ pub struct Image {
     border_radius: border::Radius,
     /// The size of the image container
     measured_size: Size,
-    /// Duration to wait before registering image visibility
-    image_debounce: Option<Duration>,
+    /// Duration to wait before we start decoding the blurhash (if any)
     blurhash_debounce: Option<Duration>,
+    /// Duration to wait before we start to download the actual image
+    ///
+    /// This is relevant e.g. on tables where scrolling over items will show a
+    /// huge amount of images, hence normally triggering a huge amount of
+    /// downloads
+    download_debounce: Option<Duration>,
     /// The images blur hash (if any)
     blurhash: Option<String>,
     /// This function gives the image the ability to modify the given
@@ -109,12 +290,7 @@ pub struct Image {
     ///
     /// This does nothing if there is no sizing strategy
     responsive_resolution: bool,
-    /// The currently allocated image data (if any)
-    status: Option<Content>,
-    /// Any running image download task
-    download_task: Option<task::Handle>,
-    /// Any running blurhash decoding task
-    blurhash_task: Option<task::Handle>,
+    /// Whether *this instance* is currently on screen
     visible: bool,
 }
 
@@ -135,28 +311,27 @@ pub enum ImgMsg {
     ImageDownloaded(Result<image::Handle, Error>),
 }
 
-#[derive(Debug, Clone)]
-pub enum Content {
-    Blurhash(image::Handle),
-    Full(image::Handle),
-    Error,
-}
-
 impl Image {
     /// Creates a new image
     pub fn new(url: impl Into<Url>) -> Self {
+        let url = url.into();
+        // We derive the Uuid from the url
+        //
+        // TODO: Consider ignoring parameters like size in the url so that the same
+        // Image is share (greatest size wins); This would constitute a rewrite of the
+        // store where we'd have to store the resolution of the content as well
+        let uuid = Uuid::new_v3(&Uuid::NAMESPACE_URL, url.as_str().as_bytes());
+
         Image {
-            url: url.into(),
+            uuid,
+            url,
             blurhash: None,
             resolution_strategy: None,
             measured_size: Size {
                 width: 16.0,
                 height: 16.0,
             },
-            status: None,
-            image_debounce: None,
-            download_task: None,
-            blurhash_task: None,
+            download_debounce: None,
             height: None,
             width: None,
             border_radius: Radius::default(),
@@ -203,7 +378,7 @@ impl Image {
 
     /// Makes the image respond to resolution changes by refetching the image
     /// in a higher resolution if a sizing strategy has been specified through
-    /// [`Image::sizing_strategy`]
+    /// [`Image::resolution_strategy`]
     pub fn responsive_resolution(mut self, resp_res: bool) -> Self {
         self.responsive_resolution = resp_res;
         self
@@ -212,19 +387,24 @@ impl Image {
     /// Decodes the blurhash (if any) beforehand;
     /// This is a blocking operation and should be treated as such
     #[deprecated = "let the blurhash calculate dynamically"]
-    pub fn pre_decode_blurhash(mut self, width: u32, height: u32) -> Self {
+    pub fn pre_decode_blurhash(self, width: u32, height: u32) -> Self {
+        // Do nothing if we already have content stored
+        if self.get_state().content.is_some() {
+            return self;
+        }
+
         if let Some(blurhash) = &self.blurhash
             && let Ok(pixels) = blurhash::decode(blurhash, width, height, 1.0)
         {
             let handle = image::Handle::from_rgba(width, height, pixels);
-            self.status = Some(Content::Blurhash(handle));
+            Store::global().insert(self.uuid, Content::Blurhash(handle));
         }
         self
     }
 
     /// Debounces the fetching of the image
     pub fn debounce(mut self, duration: Duration) -> Self {
-        self.image_debounce = Some(duration);
+        self.download_debounce = Some(duration);
         self
     }
 
@@ -233,11 +413,21 @@ impl Image {
         self.blurhash_debounce = Some(duration);
         self
     }
+
+    /// A snapshot of the state shared between all instances of this image
+    pub fn get_state(&self) -> ImageState {
+        Store::global().get(self.uuid)
+    }
+
+    /// Mutates the state shared between all instances of this image
+    pub fn with_state_mut<R>(&self, f: impl FnOnce(&mut ImageState) -> R) -> R {
+        Store::global().mutate(self.uuid, f)
+    }
 }
 
 impl Image {
     pub fn view(&self) -> Element<'_, ImgMsg> {
-        let image: Element<'_, ImgMsg> = match &self.status {
+        let image: Element<'_, ImgMsg> = match self.get_state().content {
             Some(Content::Blurhash(handle) | Content::Full(handle)) => {
                 // Either the blurhash or the image have been loaded
                 widget::image(handle)
@@ -291,10 +481,17 @@ impl Image {
     }
 
     pub fn update(&mut self, message: ImgMsg) -> Task<ImgMsg> {
+        let store = Store::global();
+        let uuid = self.uuid;
+
         match message {
             // Once the image is shown / size is changed
             ImgMsg::Shown(size) => {
-                self.visible = true;
+                if !self.visible {
+                    self.visible = true;
+                    store.show(uuid);
+                }
+
                 if size.width < 1.0 || size.height < 1.0 {
                     return Task::none();
                 }
@@ -308,80 +505,63 @@ impl Image {
                     );
                 }
                 self.measured_size = size;
+                let state = store.get(uuid);
 
-                let Image {
-                    image_debounce,
-                    blurhash_debounce,
-                    blurhash,
-                    ..
-                } = self.clone();
-
-                // Only render the blurhash if one is set
-                let blurhash_timer = if blurhash.is_some() && self.status.is_none() {
-                    // Delay the blurhash if a delay is set
-                    if let Some(debounce) = blurhash_debounce {
-                        Task::future(async move {
-                            tokio::time::sleep(debounce).await;
-                            Some(ImgMsg::DebounceBlurhash(size))
-                        })
-                        .and_then(Task::done)
-                    } else {
-                        Task::done(ImgMsg::DebounceBlurhash(size))
-                    }
+                // Start rendering a blurhash if there currently is no content
+                let blurhash_timer = if self.blurhash.is_some() && state.content.is_none() {
+                    debounce_timer(self.blurhash_debounce, ImgMsg::DebounceBlurhash(size))
                 } else {
                     Task::none()
                 };
 
-                // Delay the image if a delay is set
-                let render_timer = if matches!(self.status, None | Some(Content::Blurhash(_))) {
-                    if let Some(debounce) = image_debounce {
-                        Task::future(async move {
-                            tokio::time::sleep(debounce).await;
-                            Some(ImgMsg::DebounceImage(size))
-                        })
-                        .and_then(Task::done)
-                    } else {
-                        Task::done(ImgMsg::DebounceImage(size))
-                    }
+                // Start downloading the image if there is currently no image
+                let render_timer = if matches!(state.content, None | Some(Content::Blurhash(_))) {
+                    debounce_timer(self.download_debounce, ImgMsg::DebounceImage(size))
                 } else {
                     Task::none()
                 };
 
                 Task::batch([blurhash_timer, render_timer])
             }
-            ImgMsg::DebounceBlurhash(size) => {
-                if self.visible && self.status.is_none() {
+            // This runs AFTER the debounce
+            ImgMsg::DebounceBlurhash(_size) => {
+                // If the image is still visible and ...
+                if self.visible && store.get(uuid).content.is_none() {
                     return self.blurhash_task();
                 }
 
                 Task::none()
             }
-            ImgMsg::DebounceImage(size) => {
-                if self.visible && matches!(self.status, None | Some(Content::Blurhash(_))) {
+            // This runs AFTER the debounce
+            ImgMsg::DebounceImage(_size) => {
+                // If the image is still visible and ...
+                if self.visible
+                    && matches!(store.get(uuid).content, None | Some(Content::Blurhash(_)))
+                {
                     return self.download_task();
                 }
 
                 Task::none()
             }
             ImgMsg::Hidden => {
-                // stop tracking time once the image is hidden
                 self.visible = false;
+                // Notify the store that this instance was hidden
+                //
+                store.hide(uuid);
 
-                // If the image is hidden before it is fully downloaded
-                // the download may be aborted
-                if let Some(download_task) = &self.download_task.take() {
-                    download_task.abort();
-                }
                 Task::none()
             }
             ImgMsg::Resized(size) => {
-                // If auto sizing is active and the new resolution has greater dimensions
+                // If auto sizing is active and the new resolution has greater dimensions than
+                // the one we last fetched at
                 if self.responsive_resolution
                     && self.resolution_strategy.is_some()
                     && size.width > self.measured_size.width
                     && size.height > self.measured_size.height
                 {
                     // Then redownload / rerender
+                    self.measured_size = size;
+
                     match &self.blurhash {
                         // Either just download
                         None => self.download_task(),
@@ -392,153 +572,81 @@ impl Image {
                     Task::none()
                 }
             }
-            ImgMsg::BlurhashDecoded(handle) => {
-                if let Ok(handle) = handle {
-                    self.status = Some(Content::Blurhash(handle));
-                } else {
-                    self.status = Some(Content::Error);
-                }
-                self.blurhash_task.take();
-                Task::none()
-            }
-            ImgMsg::ImageDownloaded(handle) => {
-                if let Ok(handle) = handle {
-                    self.status = Some(Content::Full(handle));
-                    // Download has concluded so abort blurhash decoding
-                    if let Some(blurhash_task) = &self.blurhash_task.take() {
-                        blurhash_task.abort();
+            ImgMsg::BlurhashDecoded(result) => {
+                match result {
+                    Ok(handle) => {
+                        store.insert(uuid, Content::Blurhash(handle));
                     }
-                } else if self.status.is_none() {
-                    self.status = Some(Content::Error);
+                    // A broken blurhash must not poison the image itself;
+                    // the real image may still download just fine
+                    Err(error) => log::warn!("Failed to decode blurhash: {error:?}"),
                 }
-                self.download_task.take();
+
+                store.mutate(uuid, ImageState::conclude_blurhash);
+                Task::none()
+            }
+            ImgMsg::ImageDownloaded(result) => {
+                match result {
+                    Ok(handle) => {
+                        store.insert(uuid, Content::Full(handle));
+                    }
+                    Err(_error) => {
+                        // Only show the error placeholder if there is
+                        // nothing else to display
+                        store.mutate(uuid, |state| {
+                            if state.content.is_none() {
+                                state.content = Some(Content::Error);
+                            }
+                        });
+                    }
+                }
+
+                store.mutate(uuid, ImageState::conclude_download);
                 Task::none()
             }
         }
     }
 
-    /// Asynchronously downloads the image from the URL
-    /// automatically downloads a sized version based on the resizer
-    async fn download(
-        url: Url,
-        measured_size: Size,
-        sizing_strategy: Option<fn(Url, Size) -> Url>,
-    ) -> Result<Bytes, Error> {
-        // Change the image URL to be sized if there is a sizing strategy available
-        let url = if let Some(resize_strat) = sizing_strategy {
-            resize_strat(url, measured_size)
-        } else {
-            url
-        };
-
-        let request = CLIENT.get(url);
-        let bytes = request.send().await?.error_for_status()?.bytes().await?;
-
-        Ok(Bytes(bytes))
+    /// Spawns a download of this image through the global [`Store`]
+    fn download_task(&self) -> Task<ImgMsg> {
+        Store::global().download_task(
+            self.uuid,
+            self.url.clone(),
+            self.measured_size,
+            self.resolution_strategy,
+        )
     }
 
-    /// Asynchronously decodes the blurhash for the given size
-    #[allow(clippy::cast_possible_truncation)] // the resol are relatively small
-    #[allow(clippy::cast_sign_loss)] // And they shouldn't be negative either
-    async fn decode_blurhash(blurhash: String, size: Size) -> Result<Rgba, Error> {
-        let width = size.width.round() as u32;
-        let height = size.height.round() as u32;
-
-        // Decode the blurhash (this is a blocking operation)
-        tokio::task::spawn_blocking(move || {
-            let pixels = blurhash::decode(&blurhash, width, height, 1.0)?;
-
-            Ok(Rgba {
-                width,
-                height,
-                pixels: Bytes(pixels.into()),
-            })
-        })
-        .await?
-    }
-
-    fn download_task(&mut self) -> Task<ImgMsg> {
-        let Self {
-            url,
-            measured_size,
-            resolution_strategy: sizing_strategy,
-            download_task,
-            ..
-        } = self;
-
-        // Abort previous download (if any)
-        if let Some(download_handle) = download_task.take() {
-            download_handle.abort();
-        }
-
-        // Start new download
-        let (task, download_handle) = Task::future(Self::download(
-            url.clone(),
-            *measured_size,
-            *sizing_strategy,
-        ))
-        .and_then(|bytes| {
-            // After downloading directly allocate the image so we only start overwriting the
-            // Blurhashes once the image is fully allocated. This way we get a guarantee that the
-            // image is actually drawn once we replace the Blurhash, instead of being deferred to the
-            // renderer.
-            //
-            // > [`image::allocate`]:
-            // > When you obtain an Allocation explicitly, you get the guarantee that using a Handle
-            // > will draw the corresponding image immediately in the next frame.
-            image::allocate(image::Handle::from_bytes(bytes)).map_err(|_| Error::ImageDecodingFailed)
-        })
-        .and_then(|a| Task::done(Ok(a.handle().clone())))
-        .map(ImgMsg::ImageDownloaded)
-        .abortable();
-
-        // Set download handle and return value
-        *download_task = Some(download_handle.abort_on_drop());
-        task
-    }
-
-    fn blurhash_task(&mut self) -> Task<ImgMsg> {
-        let Self {
-            measured_size,
-            blurhash,
-            blurhash_task,
-            ..
-        } = self;
-
-        // Abort previous task (if any)
-        if let Some(blurhash_handle) = blurhash_task.take() {
-            blurhash_handle.abort();
-        }
-
-        // Decode blurhash
-        let (blurhash_task, blurhash_handle) = Task::future(Self::decode_blurhash(
-            blurhash
+    /// Spawns a blurhash decoding of this image through the global [`Store`]
+    fn blurhash_task(&self) -> Task<ImgMsg> {
+        Store::global().blurhash_task(
+            self.uuid,
+            self.blurhash
                 .clone()
-                .expect("The blurhash_task function should only be called when blurhash is Some")
-                .clone(),
-            *measured_size,
-        ))
-        // Then allocate image
-        .and_then(|rgba| {
-            let Rgba {
-                width,
-                height,
-                pixels,
-            } = rgba;
+                .expect("The blurhash_task function should only be called when blurhash is Some"),
+            self.measured_size,
+        )
+    }
+}
 
-            Task::done(Ok(
-                // Unlike the download task this time we only create the handle and defer
-                // the allocation to the renderer. This way we can decode all blurhashes as
-                // fast as possible without blocking ourselves by also allocating them.
-                image::Handle::from_rgba(width, height, pixels),
-            ))
+/// If an Image is dropped it can no longer be displayed hence no sensor will
+/// emit hidden, meaning we should decrease the visibility counter ourselves
+impl Drop for Image {
+    fn drop(&mut self) {
+        Store::global().hide(self.uuid);
+    }
+}
+
+/// A task which emits `msg` after the given `debounce` duration
+/// (or immediately, if debounce is [`None`])
+fn debounce_timer(debounce: Option<Duration>, msg: ImgMsg) -> Task<ImgMsg> {
+    match debounce {
+        Some(debounce) => Task::future(async move {
+            tokio::time::sleep(debounce).await;
+            Some(msg)
         })
-        .map(ImgMsg::BlurhashDecoded)
-        .abortable();
-
-        // Set blurhash handle and return value
-        self.blurhash_task = Some(blurhash_handle.abort_on_drop());
-        blurhash_task
+        .and_then(Task::done),
+        None => Task::done(msg),
     }
 }
 
@@ -549,36 +657,13 @@ pub struct Rgba {
     pub pixels: Bytes,
 }
 
-// We don't want to log all the bytes
+// We don't want to log all the pixels
 #[allow(clippy::missing_fields_in_debug)]
 impl fmt::Debug for Rgba {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Rgba")
             .field("width", &self.width)
             .field("height", &self.height)
-            .finish()
-    }
-}
-
-#[derive(Clone)]
-pub struct Bytes(bytes::Bytes);
-
-impl Bytes {
-    pub fn as_slice(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl From<Bytes> for bytes::Bytes {
-    fn from(value: Bytes) -> Self {
-        value.0
-    }
-}
-
-impl fmt::Debug for Bytes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Compressed")
-            .field("bytes", &self.0.len())
             .finish()
     }
 }
