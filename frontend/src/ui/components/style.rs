@@ -24,23 +24,28 @@ pub fn muted_text(theme: &iced::Theme) -> widget::text::Style {
 /// A round button usually placed as a header to signify
 /// play everything on this page
 pub fn header_play_button<'a, T: 'a>() -> widget::Button<'a, T> {
-    widget::button(widget::container(icons::play_filled().size(20)).center(Fill))
-        .height(42)
-        .width(42)
-        .style(|theme, status| {
-            let mut style = button::primary(theme, status);
-            style.border = Border::default().rounded(i32::MAX);
-            style
-        })
+    widget::button(
+        widget::container(icons::play_filled().style(text::default).size(20)).center(Fill),
+    )
+    .height(42)
+    .width(42)
+    .style(|theme, status| {
+        let mut style = button::primary(theme, status);
+        style.border = Border::default().rounded(i32::MAX);
+        style
+    })
 }
 
 /// A round button usually placed as a header to signify
 /// play everything on this page
 pub fn header_text<'a>(text: impl text::IntoFragment<'a>) -> widget::Text<'a> {
-    widget::text(text).size(36).font(Font {
-        weight: font::Weight::Bold,
-        ..Font::DEFAULT
-    })
+    widget::text(text)
+        .ellipsis(text::Ellipsis::End)
+        .size(36)
+        .font(Font {
+            weight: font::Weight::Bold,
+            ..Font::DEFAULT
+        })
 }
 
 /// The default header for the routes.

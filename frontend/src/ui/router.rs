@@ -18,6 +18,7 @@ use macros::Receiver;
 
 use crate::ui::{
     Receiver,
+    command_palette::Message::ChangeRoute,
     router::{
         albums::Albums,
         artist::Artist,
@@ -153,5 +154,11 @@ impl Router {
             Msg::ArtistDriver(message) => self.artist.update(message).map(Msg::ArtistDriver),
             Msg::SearchDriver(message) => self.search_page.update(message).map(Msg::SearchDriver),
         }
+    }
+}
+
+impl Router {
+    pub fn change_route(route: Route) {
+        Self::send(Msg::ChangeRoute(route));
     }
 }

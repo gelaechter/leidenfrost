@@ -48,10 +48,10 @@ fn generate_icons() {
     generated.push_str(
         "
 use iced::{
-    Font,
-    advanced::text,
-    widget::{self, Text, text::Catalog},
-};\n",
+    widget::{self, text},
+};
+
+pub type Icon<'a> = widget::Text<'a>;\n",
     );
 
     for glyph in icomoon.glyphs {
@@ -68,8 +68,8 @@ fn glyph_function(extras: Extras) -> String {
 
     format!(
         r#"
-pub fn {fn_name}<'a, Theme: Catalog + 'a, Renderer: text::Renderer<Font = Font>>() -> Text<'a, Theme, Renderer> {{
-    widget::text({char:?}).font("{FONT_NAME}")
+pub fn {fn_name}<'a>() -> Icon<'a> {{
+    widget::text({char:?}).font("{FONT_NAME}").style(text::base)
 }}
 "#
     )

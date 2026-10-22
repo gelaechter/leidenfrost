@@ -54,11 +54,13 @@ impl EndpointDB {
             .pragma("cache_size", "-131072") // 128 MiB page cache
             .pragma("temp_store", "MEMORY");
 
-        // Open db
         let db = SqlitePoolOptions::new().connect_with(opts).await?;
 
-        // the migrations are relative the Cargo.toml
-        sqlx::migrate!("src/db/migrations").run(&db).await.expect("migration error");
+        // the migrations are relative to Cargo.toml
+        sqlx::migrate!("src/db/migrations")
+            .run(&db)
+            .await
+            .expect("migration error");
 
         Ok(EndpointDB { db })
     }

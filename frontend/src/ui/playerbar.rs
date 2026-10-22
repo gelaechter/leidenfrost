@@ -1,5 +1,5 @@
 use iced::{
-    Element,
+    Background, Border, Color, Element,
     Length::{self, Fill, FillPortion},
     Task, Theme,
     alignment::Horizontal,
@@ -205,31 +205,42 @@ impl PlayerBar {
     }
 
     fn buttons(&self) -> Element<'_, Notify> {
-        const BUTTON_SIZE: u32 = 20;
+        const ICON_SIZE: u32 = 18;
 
-        let stop_button = player_button(icons::square().size(BUTTON_SIZE));
+        let stop_button = player_button(icons::square_filled().size(ICON_SIZE));
 
         let shuffle_button = player_button(
             icons::shuffle()
                 .style(|t: &Theme| text::Style {
-                    color: self.shuffle.then_some(t.palette().primary.strong.color),
+                    color: self.shuffle.then_some({ Color::from_rgb8(76, 82, 241) }),
                 })
-                .size(BUTTON_SIZE),
+                .size(ICON_SIZE),
         )
         .on_press(Notify::Shuffle(!self.shuffle));
 
         let skip_back_button =
-            player_button(icons::skip_back().size(BUTTON_SIZE)).on_press(Notify::Previous);
+            player_button(icons::skip_back_filled().size(ICON_SIZE)).on_press(Notify::Previous);
 
-        let pause_button = player_button(if self.paused {
-            icons::play().size(BUTTON_SIZE)
+        let play_pause_button = player_button(widget::center(if self.paused {
+            icons::play_filled().style(text::default).size(ICON_SIZE)
         } else {
-            icons::pause().size(BUTTON_SIZE)
+            icons::pause_filled().style(text::default).size(ICON_SIZE)
+        }))
+        .style(|theme, _status| {
+            let text_color = theme.seed().text;
+            button::Style {
+                background: Some(Background::Color(text_color)),
+                text_color: theme.seed().background,
+                border: Border::default().rounded(i32::MAX),
+                ..Default::default()
+            }
         })
+        .width(ICON_SIZE + 20)
+        .height(ICON_SIZE + 20)
         .on_press(Notify::Pause(!self.paused));
 
         let skip_forward_button =
-            player_button(icons::skip_forward().size(BUTTON_SIZE)).on_press(Notify::Next);
+            player_button(icons::skip_forward_filled().size(ICON_SIZE)).on_press(Notify::Next);
 
         let repeat_button = player_button(
             match self.repeat_mode {
@@ -241,7 +252,7 @@ impl PlayerBar {
                     color: Some(t.palette().primary.strong.color),
                 }),
             }
-            .size(BUTTON_SIZE),
+            .size(ICON_SIZE),
         )
         .on_press(Notify::Repeat(match self.repeat_mode {
             // Cycle repeat mode
@@ -251,18 +262,21 @@ impl PlayerBar {
         }));
 
         let play_random_button =
-            player_button(icons::dices().size(BUTTON_SIZE)).on_press(Notify::PlayRandom);
+            player_button(icons::dices().size(ICON_SIZE)).on_press(Notify::PlayRandom);
 
         // Button container
-        widget::container(row![
-            stop_button,
-            shuffle_button,
-            skip_back_button,
-            pause_button,
-            skip_forward_button,
-            repeat_button,
-            play_random_button,
-        ])
+        widget::container(
+            row![
+                stop_button,
+                shuffle_button,
+                skip_back_button,
+                play_pause_button,
+                skip_forward_button,
+                repeat_button,
+                play_random_button,
+            ]
+            .spacing(4),
+        )
         .width(Length::Fill)
         .align_x(Horizontal::Center)
         .into()

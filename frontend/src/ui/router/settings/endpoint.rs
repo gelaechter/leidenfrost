@@ -21,6 +21,8 @@ use backend::api::{
 
 use crate::ui::{Receiver, components::icons};
 
+
+
 /// The settings for an endpoint
 #[derive(Clone)]
 pub struct EndpointSettings {

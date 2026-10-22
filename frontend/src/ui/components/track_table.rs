@@ -67,7 +67,7 @@ impl From<TrackView> for TrackRow {
             let blurhash = track_view.track.image_blur_hash.clone();
             Image::new(url)
                 .blurhash_maybe(blurhash)
-                .debounce_blurhash(Duration::from_millis(10))
+                // .debounce_blurhash(Duration::from_millis(10))
                 .debounce(Duration::from_millis(500))
                 .border_radius(8)
         });

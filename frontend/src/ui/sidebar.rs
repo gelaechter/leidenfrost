@@ -23,7 +23,7 @@ use macros::Receiver;
 use crate::ui::{
     Receiver,
     components::{
-        icons,
+        icons::{self, Icon},
         image::{self, Image},
     },
     router::Route,
@@ -154,13 +154,13 @@ impl Sidebar {
     /// The tab select of the sidebar
     pub fn tab_button<'a>(
         &'a self,
-        icon: impl Into<Element<'a, SidebarMsg>>,
+        icon: Icon<'a>,
         text: impl Into<Element<'a, SidebarMsg>>,
         route: Route,
     ) -> Element<'a, SidebarMsg> {
         widget::button(
             row![
-                icon.into(), // Here we manually erase the types
+                icon.style(text::default),
                 text.into()
             ]
             .spacing(8),

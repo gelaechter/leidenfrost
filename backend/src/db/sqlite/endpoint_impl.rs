@@ -532,7 +532,12 @@ impl MusicEndpoint for EndpointDB {
                     .values()
                     .find(|l| l.to_lowercase().contains(&needle))
                     .cloned(),
-                None => continue,
+                None => {
+                    log::error!(
+                        "Database and rust state mismatch; Expected a lyric but instead found None?"
+                    );
+                    continue;
+                }
             };
             out.push(SearchResult::LyricMatch {
                 matched_lyric: matched,

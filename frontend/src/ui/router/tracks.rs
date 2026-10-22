@@ -11,14 +11,12 @@ use backend::{
     data_view::TrackView,
 };
 
-use crate::ui::{
-    Receiver,
+use crate::ui::
     components::{
         style::default_header,
-        track_table::{self, TrackRow, TrackTable, TrackTableMsg},
-    },
-    player::{GenericPlayer, PlayerMsg},
-};
+        track_table::{TrackRow, TrackTable, TrackTableMsg},
+    }
+;
 
 /// The tracks route
 pub struct Tracks {
@@ -30,15 +28,7 @@ pub struct Tracks {
 
 impl Default for Tracks {
     fn default() -> Self {
-        let track_table: TrackTable = TrackTable::default()
-            .add_column(track_table::index_column())
-            .add_column(track_table::combined_title_column())
-            .add_column(track_table::album_column())
-            .add_column(track_table::duration_column())
-            .add_column(track_table::genre_column())
-            .on_double_click_row(|track| {
-                GenericPlayer::send(PlayerMsg::Play(track.view));
-            });
+        let track_table: TrackTable = TrackTable::default();
 
         Self {
             track_table,

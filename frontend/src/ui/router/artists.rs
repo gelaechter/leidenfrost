@@ -27,7 +27,7 @@ use crate::ui::{
         table::{Column, Table, TableMsg},
         utils::format_duration,
     },
-    router::Route,
+    router::{Route, Router},
 };
 
 /// The tracks route
@@ -41,7 +41,10 @@ impl Default for Artists {
         let artist_table = Table::new()
             .add_column(index_column())
             .add_column(combined_title_column())
-            .add_column(duration_column());
+            .add_column(duration_column())
+            .on_double_click_row(|row| {
+                Router::change_route(Route::Artist(row.view.artist.id));
+            });
 
         Self { artist_table }
     }
@@ -187,6 +190,7 @@ pub fn combined_title_column() -> Column<ArtistRow, ArtistCellMsg> {
 
             // Artist name
             let artist_name = widget::text(artist_name)
+                .style(text::base)
                 .wrapping(Wrapping::None)
                 .ellipsis(text::Ellipsis::End);
 

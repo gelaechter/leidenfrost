@@ -72,6 +72,8 @@ static PLAYER_EVENT_CHANNEL: LazyLock<(
     (tx, Mutex::new(rx))
 });
 
+/// The player is a [`Receiver`] for [`PlayerMsg`] so that we can arbitrarily add items
+/// ot the queue
 #[derive(Receiver)]
 #[message(PlayerMsg)]
 pub struct GenericPlayer {

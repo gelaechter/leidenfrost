@@ -35,7 +35,7 @@ pub enum Message {
 
 impl Default for CommandPalette {
     fn default() -> Self {
-        let search_table = SearchTable::default().add_column(search_table::combined_display());
+        let search_table = SearchTable::default();
 
         Self {
             visible: Default::default(),
@@ -172,6 +172,7 @@ impl CommandPalette {
                         } else {
                             None
                         },
+                        text_color: palette.background.base.text,
                         ..Default::default()
                     }
                 })

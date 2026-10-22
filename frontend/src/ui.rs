@@ -1,4 +1,8 @@
+//! proc macro crates cannot currently export anything other than proc macros
+//! which is why [`Receiver`], [`ReceiverContainer`] and [`inventory::collect!`]
+//! live here
 pub mod app;
+pub mod command_palette;
 pub mod components;
 pub mod mpris_server;
 pub mod player;
@@ -7,7 +11,6 @@ pub mod queue;
 pub mod router;
 pub mod sidebar;
 pub mod widgets;
-pub mod command_palette;
 
 use iced::Subscription;
 

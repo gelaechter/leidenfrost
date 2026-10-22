@@ -3,18 +3,10 @@
 use std::time::Duration;
 
 use crate::ui::{
-    Receiver,
-    components::{
-        icons,
-        image::{self, Image},
-        style::{em_dash, muted_text},
-        table::{Column, Table, TableMsg},
-        track_table::{self, TrackCellMsg, TrackRow},
-    },
-    player::{GenericPlayer, PlayerMsg},
-    router::{
+    Receiver, components::{
+        album_table::{self, AlbumCellMsg, AlbumRow}, icons, image::{self, Image}, style::{em_dash, muted_text}, table::{Column, Table, TableMsg}, track_table::{self, TrackCellMsg, TrackRow},
+    }, player::{GenericPlayer, PlayerMsg}, router::{
         Route, Router, RouterMsg,
-        albums::{self, AlbumCellMsg, AlbumRow},
         artists::{self, ArtistCellMsg, ArtistRow},
         genres::{self, GenreCellMsg, GenreRow},
         playlists::{self, PlaylistCellMsg, PlaylistRow},
@@ -73,7 +65,9 @@ pub enum LyricsCellMsg {
     ChangeRoute(Route),
 }
 
-/// The default search table which displays
+/// An already configured default search table
+///
+/// Use [`SearchTable::new`] to get a default one
 impl Default for SearchTable {
     fn default() -> Self {
         SearchTable::new()
@@ -211,7 +205,7 @@ pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
             SearchRow::Artist(artist_row) => artists::combined_title_column()
                 .view(artist_row)
                 .map(SearchCellMsg::Artist),
-            SearchRow::Album(album_row) => albums::combined_title_column()
+            SearchRow::Album(album_row) => album_table::combined_title_column()
                 .view(album_row)
                 .map(SearchCellMsg::Album),
             SearchRow::Playlist(playlist_row) => playlists::combined_title_column()

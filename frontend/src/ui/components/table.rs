@@ -2,6 +2,7 @@ use core::panic;
 use std::{
     clone::Clone,
     collections::HashSet,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -22,7 +23,8 @@ use ordermap::OrderMap;
 use uuid::Uuid;
 
 /// A table component
-pub struct Table<T, M> {
+#[derive(Debug, Clone)]
+pub struct Table<T: std::fmt::Debug + Clone, M> {
     /// The table rows
     ///
     /// These act as state, meaning every cell in a row shares one state
@@ -41,6 +43,7 @@ pub struct Table<T, M> {
     double_click_callback: Option<fn(T)>,
 }
 
+#[derive(Debug, Clone)]
 pub struct ResizeInfo {
     /// Point where something started to get dragged
     drag_point: Point,
@@ -54,7 +57,7 @@ pub struct ResizeInfo {
 /// of [`Table::update`] can cause data-races; This was discovered when making
 /// searches in the command palette which quickly causes a table to change thus
 /// invalidating a rows index and causing an `index out of bounds`
-impl<T, M> Table<T, M> {
+impl<T: std::fmt::Debug + Clone, M> Table<T, M> {
     pub fn new() -> Self {
         Self {
             rows: OrderMap::new(),
@@ -112,6 +115,7 @@ impl<T, M> Table<T, M> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Row<T> {
     // /// A random ID used to key the rows, this way we can prevent different rows
     // /// from being merged during a DOM diff
@@ -142,15 +146,16 @@ impl<T> Row<T> {
 /// A function that produces the header of a column
 /// while this header can produce an arbitrary Message `M`, it will not be
 /// driven or reacted to.
-type ColumnHeader<M> = Box<dyn Fn() -> Element<'static, M> + 'static>;
+type ColumnHeader<M> = Arc<dyn Fn() -> Element<'static, M> + Send + Sync + 'static>;
 
 /// A function that presents the row state in a column
-type ColumnView<T, M> = Box<dyn for<'a> Fn(&'a T) -> Element<'a, M> + 'static>;
+type ColumnView<T, M> = Arc<dyn for<'a> Fn(&'a T) -> Element<'a, M> + Send + Sync + 'static>;
 
 /// A function allowing us to update the row state in reaction to a column
 /// view emitted message
-type ColumnUpdate<T, M> = Box<dyn Fn(&mut T, M) -> Task<M> + 'static>;
+type ColumnUpdate<T, M> = Arc<dyn Fn(&mut T, M) -> Task<M> + Send + Sync + 'static>;
 
+#[derive(Clone)]
 pub struct Column<T, M> {
     /// The header for the column
     /// While this can be any element it cannot mutate state
@@ -178,16 +183,32 @@ pub struct Column<T, M> {
     on_grab_area: bool,
 }
 
+/// There is no good way to display function pointers in a debug function
+#[allow(clippy::missing_fields_in_debug)]
+impl<T, M> std::fmt::Debug for Column<T, M> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Column")
+            .field("align_x", &self.align_x)
+            .field("align_y", &self.align_y)
+            .field("width", &self.width)
+            .field("min_width", &self.min_width)
+            .field("relative_sized", &self.relative_sized)
+            .field("measured_width", &self.measured_width)
+            .field("on_grab_area", &self.on_grab_area)
+            .finish()
+    }
+}
+
 impl<T, M> Column<T, M> {
     /// Creates a new column with a header and a data-view
     pub fn new(
-        header: impl Fn() -> Element<'static, M> + 'static,
-        view: impl for<'a> Fn(&'a T) -> Element<'a, M> + 'static,
+        header: impl Fn() -> Element<'static, M> + Send + Sync + 'static,
+        view: impl for<'a> Fn(&'a T) -> Element<'a, M> + Send + Sync + 'static,
     ) -> Column<T, M> {
         Column {
-            header: Box::new(header),
-            view: Box::new(view),
-            update: Box::new(|_t, _m| Task::none()),
+            header: Arc::new(header),
+            view: Arc::new(view),
+            update: Arc::new(|_t, _m| Task::none()),
             align_x: alignment::Horizontal::Left,
             align_y: alignment::Vertical::Center,
             width: FillPortion(1),
@@ -200,8 +221,11 @@ impl<T, M> Column<T, M> {
     }
 
     /// Sets the update method for this column if it's stateful
-    pub fn update(mut self, update: impl Fn(&mut T, M) -> Task<M> + 'static) -> Column<T, M> {
-        self.update = Box::new(update);
+    pub fn update(
+        mut self,
+        update: impl Fn(&mut T, M) -> Task<M> + Send + Sync + 'static,
+    ) -> Column<T, M> {
+        self.update = Arc::new(update);
         self
     }
 
@@ -484,6 +508,7 @@ where
         let headers = self.columns.iter().enumerate().map(|(idx, col)| {
             // The header
             let header = widget::container((col.header)().map(|_m| Message::None))
+                .clip(true)
                 .padding(Padding::ZERO.horizontal(8))
                 .height(Fill)
                 .width(Fill)

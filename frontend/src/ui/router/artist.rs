@@ -2,49 +2,54 @@ use backend::{
     api::endpoint_api::{EndpointManager, GetAlbumsParams},
     data_view::ArtistView,
 };
+
 use iced::{
-    Element, Renderer, Task, Theme,
+    Element, Task,
+    alignment::Vertical,
     widget::{
-        self, Text, button,
+        self, Button, button,
         text::{self},
     },
 };
 
-use crate::ui::{
-    components::{
-        icons,
-        image::{Image, ImgMsg},
-    },
-    router::albums::AlbumRow,
+use crate::ui::components::{
+    album_table::{AlbumRow, AlbumTable, AlbumTableMsg},
+    icons::{self, Icon},
+    image::{Image, ImgMsg},
+    style::header_text,
 };
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Artist {
     id: Option<String>,
     state: PageState,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub enum PageState {
     #[default]
     None,
     Loading,
-    Loaded(ArtistData),
+    Loaded(Box<ArtistData>),
 }
 
 #[derive(Debug, Clone)]
 pub struct ArtistData {
     artist: ArtistView,
     artist_image: Option<Image>,
-    albums: Vec<AlbumRow>,
+    album_table: AlbumTable,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     /// Fetches the artist data for a specific artist
     FetchArtist(String),
-    ArtistFetched(ArtistData),
+    ArtistFetched(Box<ArtistData>),
     ImageDriver(ImgMsg),
+    Play,
+    PlayNext,
+    PlayLast,
+    TableDriver(AlbumTableMsg),
 }
 
 const IMAGE_SIZE: u32 = 256;
@@ -87,17 +92,22 @@ impl Artist {
                                 .width(IMAGE_SIZE)
                         });
 
+                        let rows = albums.into_iter().map(AlbumRow::from);
+
+                        let mut album_table = AlbumTable::default();
+                        album_table.extend(rows);
+
                         ArtistData {
                             artist,
-                            albums: albums.into_iter().map(AlbumRow::from).collect(),
+                            album_table,
                             artist_image: image,
                         }
                     },
-                    Message::ArtistFetched,
+                    |data| Message::ArtistFetched(Box::new(data)),
                 )
             }
             Message::ArtistFetched(artist_data) => {
-                self.state = PageState::Loaded(artist_data);
+                self.state = PageState::Loaded(Box::new(*artist_data));
                 Task::none()
             }
             Message::ImageDriver(message) => {
@@ -109,16 +119,27 @@ impl Artist {
                     Task::none()
                 }
             }
+            Message::Play => todo!(),
+            Message::PlayNext => todo!(),
+            Message::PlayLast => todo!(),
+            Message::TableDriver(message) => {
+                if let PageState::Loaded(ref mut data) = self.state {
+                    data.album_table.update(message).map(Message::TableDriver)
+                } else {
+                    Task::none()
+                }
+            }
         }
     }
 
     pub fn artist_page<'a>(&self, artist_data: &'a ArtistData) -> Element<'a, Message> {
-        widget::column([self.artist_header(artist_data)])
+        widget::column([self.header(artist_data), self.albums(artist_data)])
+            .spacing(40)
             .padding(16)
             .into()
     }
 
-    pub fn artist_header<'a>(&self, artist_data: &'a ArtistData) -> Element<'a, Message> {
+    pub fn header<'a>(&self, artist_data: &'a ArtistData) -> Element<'a, Message> {
         // Image
         let image: Element<'_, Message> = if let Some(ref image) = artist_data.artist_image {
             // Show an image if it's ready
@@ -129,40 +150,52 @@ impl Artist {
             icons::user().size(icon_size as u32).into()
         };
 
-        let name = widget::text(
-            artist_data
-                .artist
-                .artist
-                .name
-                .clone()
-                .unwrap_or(String::from("Unnamed artist")),
-        );
+        let name = artist_data
+            .artist
+            .artist
+            .name
+            .clone()
+            .unwrap_or(String::from("Unnamed artist"));
 
         fn action_button<'a>(
-            icon: Text<'a, Theme, Renderer>,
+            icon: Icon<'a>,
             text: impl text::IntoFragment<'a>,
-        ) -> Element<'a, Message> {
-            const TEXT_SIZE: u32 = 22;
+        ) -> Button<'a, Message> {
+            const TEXT_SIZE: u32 = 18;
 
-            widget::button(widget::row([
-                icon.size(TEXT_SIZE).into(),
-                widget::text(text).size(TEXT_SIZE).into(),
-            ]))
+            widget::button(
+                widget::row([
+                    icon.style(text::default).size(TEXT_SIZE).into(),
+                    widget::text(text).size(TEXT_SIZE).into(),
+                ])
+                .spacing(8),
+            )
             .style(button::primary)
-            .into()
         }
 
+        let play_button = action_button(icons::play_filled(), "Play").on_press(Message::Play);
+        let next_button = action_button(icons::play_filled(), "Next").on_press(Message::PlayNext);
+        let last_button = action_button(icons::play_filled(), "Last").on_press(Message::PlayLast);
+
         // Play, Next, Last
-        let buttons = widget::row([
-            action_button(icons::play_filled(), "Play"),
-            action_button(icons::play_filled(), "Next"),
-            action_button(icons::play_filled(), "Last"),
-        ])
-        .spacing(10);
+        let buttons =
+            widget::row([play_button.into(), next_button.into(), last_button.into()]).spacing(10);
 
         // Displays name, etc. next to the image
-        let info_col = widget::column([name.into(), buttons.into()]);
+        let info_col = widget::column([header_text(name).into(), buttons.into()]).spacing(20);
 
-        widget::row([widget::container(image).center(40).into(), info_col.into()]).into()
+        widget::row([image, info_col.into()])
+            .spacing(12) // Space right of image
+            .align_y(Vertical::Bottom)
+            .into()
+    }
+
+    fn albums<'a>(&self, artist_data: &'a ArtistData) -> Element<'a, Message> {
+        widget::column([
+            header_text("Released albums").size(22).into(),
+            artist_data.album_table.view().map(Message::TableDriver),
+        ])
+        .spacing(8)
+        .into()
     }
 }
