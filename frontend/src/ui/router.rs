@@ -1,9 +1,11 @@
 pub mod albums;
+pub mod artist;
 pub mod artists;
 pub mod genres;
+pub mod playlists;
+pub mod search;
 pub mod settings;
 pub mod tracks;
-pub mod playlists;
 
 use iced::{
     Element,
@@ -18,8 +20,10 @@ use crate::ui::{
     Receiver,
     router::{
         albums::Albums,
+        artist::Artist,
         artists::Artists,
         genres::Genres,
+        search::SearchPage,
         settings::{Settings, SettingsMsg},
         tracks::Tracks,
     },
@@ -37,6 +41,8 @@ pub struct Router {
     albums: Albums,
     artists: Artists,
     genres: Genres,
+    artist: Artist,
+    search_page: SearchPage,
 }
 
 #[derive(Default, Clone, PartialEq, Eq, Debug)]
@@ -55,6 +61,7 @@ pub enum Route {
     /// A specific genre identified by Id
     Genre(String),
     Genres,
+    Search,
     Settings,
 }
 
@@ -66,6 +73,8 @@ pub enum Msg {
     ArtistsDriver(artists::Message),
     GenresDriver(genres::Message),
     SettingsDriver(SettingsMsg),
+    ArtistDriver(artist::Message),
+    SearchDriver(search::Message),
 }
 
 pub type RouterMsg = Msg;
@@ -103,12 +112,19 @@ impl Router {
                 view: self.genres.view().map(Msg::GenresDriver),
                 tag: Tag::of::<Genres>(),
             },
-            Route::Artist(_) => todo!(),
+            Route::Artist(ref id) => RouteView {
+                view: self.artist.view(id).map(Msg::ArtistDriver),
+                tag: Tag::of::<Artist>(),
+            },
             Route::Genre(_) => todo!(),
             Route::Album(_) => todo!(),
             Route::Settings => RouteView {
                 view: self.settings.view().map(Msg::SettingsDriver),
                 tag: Tag::of::<Settings>(),
+            },
+            Route::Search => RouteView {
+                view: self.search_page.view().map(Msg::SearchDriver),
+                tag: Tag::of::<SearchPage>(),
             },
         };
 
@@ -134,6 +150,8 @@ impl Router {
             Msg::SettingsDriver(message) => self.settings.update(message).map(Msg::SettingsDriver),
             Msg::ArtistsDriver(message) => self.artists.update(message).map(Msg::ArtistsDriver),
             Msg::GenresDriver(message) => self.genres.update(message).map(Msg::GenresDriver),
+            Msg::ArtistDriver(message) => self.artist.update(message).map(Msg::ArtistDriver),
+            Msg::SearchDriver(message) => self.search_page.update(message).map(Msg::SearchDriver),
         }
     }
 }

@@ -76,6 +76,7 @@ impl Sidebar {
             column![
                 text("My Library").font(bold),
                 self.tab_button(icons::home(), text("Home").font(bold), Route::Home),
+                self.tab_button(icons::search(), text("Search").font(bold), Route::Search),
                 self.tab_button(
                     icons::heart(),
                     text("Favorites").font(bold),

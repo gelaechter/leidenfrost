@@ -38,7 +38,7 @@ pub struct Artists {
 
 impl Default for Artists {
     fn default() -> Self {
-        let artist_table = Table::default()
+        let artist_table = Table::new()
             .add_column(index_column())
             .add_column(combined_title_column())
             .add_column(duration_column());

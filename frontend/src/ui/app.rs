@@ -182,7 +182,7 @@ impl App {
             Message::Router(message) => self.router.update(message).map(Message::Router),
             Message::PlayerBar(message) => self.player_bar.update(message).map(Message::PlayerBar),
             Message::KeyboardEvent(event) => {
-                log::debug!("Received keyboard event: {event:?}");
+                log::trace!("Received keyboard event: {event:?}");
                 match event {
                     keyboard::Event::KeyPressed {
                         key: Key::Named(Named::F1),

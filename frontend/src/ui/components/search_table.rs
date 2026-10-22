@@ -73,6 +73,30 @@ pub enum LyricsCellMsg {
     ChangeRoute(Route),
 }
 
+/// The default search table which displays
+impl Default for SearchTable {
+    fn default() -> Self {
+        SearchTable::new()
+            .add_column(combined_display())
+            .on_double_click_row(|row| {
+                log::debug!("Double clicked search table row");
+                match row {
+                    SearchRow::Track(track_row) => {
+                        GenericPlayer::send(PlayerMsg::Play(track_row.view));
+                    }
+                    // Navigate to the artist
+                    SearchRow::Artist(artist_row) => Router::send(RouterMsg::ChangeRoute(
+                        Route::Artist(artist_row.view.artist.id.clone()),
+                    )),
+                    SearchRow::Album(album_row) => todo!(),
+                    SearchRow::Playlist(playlist_row) => todo!(),
+                    SearchRow::Genre(genre_row) => todo!(),
+                    SearchRow::Lyric(lyrics_row) => todo!(),
+                }
+            })
+    }
+}
+
 /// A column that combines an image, the title and the artist
 pub fn combined_lyrics_column() -> Column<LyricsRow, LyricsCellMsg> {
     Column::new(
@@ -173,23 +197,6 @@ impl From<SearchResult> for SearchRow {
             }
         }
     }
-}
-
-pub fn search_table() -> SearchTable {
-    Table::default().on_double_click_row(|row| {
-        log::debug!("Double clicked search table row");
-        match row {
-            SearchRow::Track(track_row) => GenericPlayer::send(PlayerMsg::Play(track_row.view)),
-            // Navigate to the artist
-            SearchRow::Artist(artist_row) => Router::send(RouterMsg::ChangeRoute(Route::Artist(
-                artist_row.view.artist.id.clone(),
-            ))),
-            SearchRow::Album(album_row) => todo!(),
-            SearchRow::Playlist(playlist_row) => todo!(),
-            SearchRow::Genre(genre_row) => todo!(),
-            SearchRow::Lyric(lyrics_row) => todo!(),
-        }
-    })
 }
 
 /// A column that shows a row depending on the [`SearchRow`] content

@@ -438,6 +438,10 @@ impl MusicEndpoint for EndpointDB {
         self.track_views(q.fetch_all(&self.db).await?).await
     }
 
+    /// TODO: This is currently very primitive, pretty much just checking if our
+    /// search term is included in the name of a piece of data
+    ///
+    /// This should be ranked somehow, e.g. FTS5: <https://sqlite.org/fts5.html>
     async fn search(&self, term: String, params: SearchParams) -> Result<Vec<SearchResult>> {
         let pat = like_pattern(&term);
         let mut out: Vec<SearchResult> = Vec::new();

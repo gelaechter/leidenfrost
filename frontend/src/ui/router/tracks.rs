@@ -15,8 +15,7 @@ use crate::ui::{
     Receiver,
     components::{
         style::default_header,
-        table::{self},
-        track_table::{self, TrackCellMsg, TrackRow, TrackTable, TrackTableMsg},
+        track_table::{self, TrackRow, TrackTable, TrackTableMsg},
     },
     player::{GenericPlayer, PlayerMsg},
 };
@@ -31,14 +30,13 @@ pub struct Tracks {
 
 impl Default for Tracks {
     fn default() -> Self {
-        let track_table: table::Table<TrackRow, TrackCellMsg> = TrackTable::default()
+        let track_table: TrackTable = TrackTable::default()
             .add_column(track_table::index_column())
             .add_column(track_table::combined_title_column())
             .add_column(track_table::album_column())
             .add_column(track_table::duration_column())
             .add_column(track_table::genre_column())
             .on_double_click_row(|track| {
-                log::debug!("Playing track by double click");
                 GenericPlayer::send(PlayerMsg::Play(track.view));
             });
 
@@ -50,7 +48,7 @@ impl Default for Tracks {
 }
 
 #[derive(Debug, Clone)]
-pub enum Cmd {
+pub enum Message {
     /// Initial track fetching
     FetchTracks,
     /// The tracks have been fetched
@@ -63,39 +61,28 @@ pub enum Cmd {
     PlayAllTracks,
 }
 
-#[derive(Debug, Clone)]
-pub enum Out {
-    /// Play a single track by overriding the queue
-    PlayTrack {
-        /// The new queue
-        tracks: Vec<TrackView>,
-        /// The current song in the queue
-        index: usize,
-    },
-}
-
-pub type TracksMsg = Cmd;
+pub type TracksMsg = Message;
 
 impl Tracks {
     pub fn view(&self) -> Element<'_, TracksMsg> {
-        let header = default_header("Tracks", Cmd::PlayAllTracks);
+        let header = default_header("Tracks", Message::PlayAllTracks);
 
         let tracks = column![
             header,
             self.track_table
                 .view()
-                .map(|c| Cmd::TableDriver(Box::new(c)))
+                .map(|c| Message::TableDriver(Box::new(c)))
         ];
 
         widget::sensor(tracks)
-            .on_show(|_| Cmd::FetchTracks)
+            .on_show(|_| Message::FetchTracks)
             .key("tracks")
             .into()
     }
 
     pub fn update(&mut self, message: impl Into<TracksMsg>) -> Task<TracksMsg> {
         match message.into() {
-            Cmd::FetchTracks => {
+            Message::FetchTracks => {
                 // Only fetch first time
                 if !self.track_table.is_empty() {
                     return Task::none();
@@ -117,26 +104,26 @@ impl Tracks {
                             .await
                             .unwrap()
                     },
-                    Cmd::TracksFetched,
+                    Message::TracksFetched,
                 )
             }
-            Cmd::TracksFetched(tracks) => {
+            Message::TracksFetched(tracks) => {
                 log::debug!("Fetched {} tracks", tracks.len());
                 // After fetching convert the track_views into rowdata
                 let rows = tracks.into_iter().map(TrackRow::from).collect();
-                Task::done(Cmd::RowsCreated(rows))
+                Task::done(Message::RowsCreated(rows))
             }
-            Cmd::RowsCreated(row_data) => {
+            Message::RowsCreated(row_data) => {
                 log::debug!("Rows created");
                 // Insert tracks
                 self.track_table.extend(row_data);
                 Task::none()
             }
-            Cmd::TableDriver(m) => self
+            Message::TableDriver(m) => self
                 .track_table
                 .update(*m)
-                .map(|c| Cmd::TableDriver(Box::new(c))),
-            Cmd::PlayAllTracks => Task::none(),
+                .map(|c| Message::TableDriver(Box::new(c))),
+            Message::PlayAllTracks => Task::none(),
         }
     }
 }

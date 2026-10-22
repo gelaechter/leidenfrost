@@ -41,19 +41,6 @@ pub struct Table<T, M> {
     double_click_callback: Option<fn(T)>,
 }
 
-impl<T, M> Default for Table<T, M> {
-    fn default() -> Self {
-        Self {
-            rows: OrderMap::new(),
-            columns: Vec::new(),
-            visible_chunks: HashSet::new(),
-            mouse_position: Point::default(),
-            resize_info: None,
-            double_click_callback: None,
-        }
-    }
-}
-
 pub struct ResizeInfo {
     /// Point where something started to get dragged
     drag_point: Point,
@@ -68,6 +55,17 @@ pub struct ResizeInfo {
 /// searches in the command palette which quickly causes a table to change thus
 /// invalidating a rows index and causing an `index out of bounds`
 impl<T, M> Table<T, M> {
+    pub fn new() -> Self {
+        Self {
+            rows: OrderMap::new(),
+            columns: Vec::new(),
+            visible_chunks: HashSet::new(),
+            mouse_position: Point::default(),
+            resize_info: None,
+            double_click_callback: None,
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }

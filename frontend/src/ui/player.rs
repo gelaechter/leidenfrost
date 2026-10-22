@@ -4,10 +4,12 @@
 
 use std::sync::LazyLock;
 
-use iced::Subscription;
 use iced::futures::Stream;
-use tokio::sync::broadcast;
-use tokio_stream::wrappers::BroadcastStream;
+use iced::{Subscription, futures};
+use tokio::sync::{
+    Mutex,
+    mpsc::{self},
+};
 
 use backend::{
     data_view::TrackView,
@@ -23,7 +25,7 @@ use crate::ui::{
 use macros::Receiver;
 
 #[derive(Clone, Debug)]
-pub enum Cmd {
+pub enum Message {
     /// An Event received from the player
     Event(PlayerEvent),
     SetPaused(bool),
@@ -54,17 +56,37 @@ pub enum QueueEvent {
     Append(TrackView),
 }
 
-pub type PlayerMsg = Cmd;
+pub type PlayerMsg = Message;
 
-static PLAYER_EVENT_CHANNEL: LazyLock<broadcast::Sender<PlayerEvent>> =
-    LazyLock::new(|| broadcast::channel(128).0);
+static PLAYER_EVENT_CHANNEL: LazyLock<(
+    mpsc::UnboundedSender<PlayerEvent>,
+    // This feels overkill but we need to own the receiver
+    Mutex<mpsc::UnboundedReceiver<PlayerEvent>>,
+)> = LazyLock::new(|| {
+    // TODO: consider using a normal channel instead and then drop less important
+    // events on queue saturation
+    //
+    // Events like inbetween PlaybackPos for example can be dropped
+    // (we care about the most recent)
+    let (tx, rx) = mpsc::unbounded_channel();
+    (tx, Mutex::new(rx))
+});
 
 #[derive(Receiver)]
 #[message(PlayerMsg)]
 pub struct GenericPlayer {
-    player_impl: PlayerImpl,
+    player_impl: Option<PlayerImpl>,
 }
 
+impl Default for GenericPlayer {
+    fn default() -> Self {
+        Self {
+            player_impl: Some(PlayerImpl::mpv_player()),
+        }
+    }
+}
+
+/// An abstraction over the current player
 pub enum PlayerImpl {
     MpvPlayer(MpvPlayer),
 }
@@ -76,95 +98,100 @@ impl PlayerImpl {
             PlayerImpl::MpvPlayer(mpv_player) => mpv_player,
         }
     }
-}
 
-impl Default for GenericPlayer {
-    /// By default uses the MPV Player backend
-    fn default() -> Self {
-        let player = MpvPlayer::new(|event| {
-            PLAYER_EVENT_CHANNEL.send(event).unwrap();
+    /// Constructs a new [`PlayerImpl::MpvPlayer`] variant
+    fn mpv_player() -> Self {
+        let mpv_player = MpvPlayer::new(|event| {
+            let _ = PLAYER_EVENT_CHANNEL.0.send(event).inspect_err(|e| {
+                log::error!("The player event channel has been closed: {e:?}");
+            });
         })
-        .expect("Error during player construction");
+        .inspect_err(|e| {
+            log::error!("Error during player construction {e:?}");
+        })
+        .unwrap();
 
-        let player_impl = PlayerImpl::MpvPlayer(player);
-        Self { player_impl }
+        PlayerImpl::MpvPlayer(mpv_player)
     }
 }
 
 impl GenericPlayer {
     pub fn update(&mut self, message: impl Into<PlayerMsg>) {
-        let player = self.player_impl.inner();
+        let Some(player_impl) = self.player_impl.as_ref() else {
+            return;
+        };
+        let player = player_impl.inner();
 
         // TODO: error handling
         let res = match message.into() {
             // Handle the events emitted from [`Self::subscription`]
-            Cmd::Event(event) => {
+            Message::Event(event) => {
                 PlayerBar::send(PlayerBarMsg::Event(event));
                 Ok(())
             }
-            Cmd::Play(track_view) => {
+            Message::Play(track_view) => {
                 player.play(&track_view).unwrap();
                 Queue::send(QueueMsg::Play(track_view));
                 Ok(())
             }
-            Cmd::SetPaused(paused) => player.pause(paused),
-            Cmd::Seek(position) => player.seek(position),
-            Cmd::Stop => player.stop(),
-            Cmd::PlayAll(track_views) => {
+            Message::SetPaused(paused) => player.pause(paused),
+            Message::Seek(position) => player.seek(position),
+            Message::Stop => player.stop(),
+            Message::PlayAll(track_views) => {
                 player.play_all(&track_views).unwrap();
                 Queue::send(QueueMsg::PlayAll(track_views));
                 Ok(())
             }
-            Cmd::PlayIndex(index) => {
+            Message::PlayIndex(index) => {
                 player.play_index(index).unwrap();
                 Queue::send(QueueMsg::PlayIndex(index));
                 Ok(())
             }
-            Cmd::Append(track_view) => {
+            Message::Append(track_view) => {
                 player.append(&track_view).unwrap();
                 Queue::send(QueueMsg::Append(track_view));
                 Ok(())
             }
-            Cmd::AppendAll(track_views) => {
+            Message::AppendAll(track_views) => {
                 player.append_all(&track_views).unwrap();
                 Queue::send(QueueMsg::AppendAll(track_views));
                 Ok(())
             }
-            Cmd::QueueRemove(index) => {
+            Message::QueueRemove(index) => {
                 player.queue_remove(index).unwrap();
                 Queue::send(QueueMsg::QueueRemove(index));
                 Ok(())
             }
-            Cmd::QueueMove { target, position } => {
+            Message::QueueMove { target, position } => {
                 player.queue_move(target, position).unwrap();
                 Queue::send(QueueMsg::QueueMove { target, position });
                 Ok(())
             }
-            Cmd::SetShuffle(b) => player.set_shuffle(b),
-            Cmd::SetRepeatMode(repeat_mode) => player.set_repeat_mode(repeat_mode),
-            Cmd::Next => {
+            Message::SetShuffle(b) => player.set_shuffle(b),
+            Message::SetRepeatMode(repeat_mode) => player.set_repeat_mode(repeat_mode),
+            Message::Next => {
                 player.next().unwrap();
                 Queue::send(QueueMsg::Next);
                 Ok(())
             }
-            Cmd::Previous => {
+            Message::Previous => {
                 player.previous().unwrap();
                 Queue::send(QueueMsg::Previous);
                 Ok(())
             }
-            Cmd::Volume(percentage) => player.volume(percentage),
+            Message::Volume(percentage) => player.volume(percentage),
         };
     }
 
     /// Subscribes to the player events
     pub fn subscription() -> Subscription<PlayerMsg> {
         fn subscribe_player_events() -> impl Stream<Item = PlayerEvent> {
-            use tokio_stream::StreamExt;
-
-            let stream = PLAYER_EVENT_CHANNEL.subscribe();
-            BroadcastStream::new(stream).filter_map(Result::ok)
+            futures::stream::unfold((), |()| async {
+                let event = PLAYER_EVENT_CHANNEL.1.lock().await.recv().await?;
+                Some((event, ()))
+            })
         }
 
-        Subscription::run(subscribe_player_events).map(|m| Cmd::Event(m).into())
+        Subscription::run(subscribe_player_events).map(Message::Event)
     }
 }

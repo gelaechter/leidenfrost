@@ -6,6 +6,7 @@ use std::{
 };
 
 use crate::ui::{
+    Receiver,
     components::{
         icons,
         image::{self, Image},
@@ -13,6 +14,7 @@ use crate::ui::{
         table::{Column, Table, TableMsg},
         utils::{IntoLink, IntoLinks, format_duration},
     },
+    player::{GenericPlayer, PlayerMsg},
     router::Route,
 };
 
@@ -39,6 +41,20 @@ pub struct TrackRow {
     pub index: usize,
     pub view: TrackView,
     pub image: Option<Image>,
+}
+
+impl Default for TrackTable {
+    fn default() -> Self {
+        TrackTable::new()
+            .add_column(index_column())
+            .add_column(combined_title_column())
+            .add_column(album_column())
+            .add_column(duration_column())
+            .add_column(genre_column())
+            .on_double_click_row(|track| {
+                GenericPlayer::send(PlayerMsg::Play(track.view));
+            })
+    }
 }
 
 static COUNTER: AtomicUsize = AtomicUsize::new(1);
@@ -74,7 +90,7 @@ pub enum TrackCellMsg {
 }
 
 pub fn track_table() -> TrackTable {
-    Table::default()
+    Table::new()
 }
 
 /// A column displaying the genres of this track

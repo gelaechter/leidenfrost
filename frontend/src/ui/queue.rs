@@ -17,7 +17,7 @@ pub struct Queue {
 
 impl Default for Queue {
     fn default() -> Self {
-        let table = TrackTable::default()
+        let table = TrackTable::new()
             .add_column(index_column())
             .add_column(combined_title_column())
             .add_column(duration_column());

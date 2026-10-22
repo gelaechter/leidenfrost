@@ -38,7 +38,7 @@ pub struct Playlists {
 
 impl Default for Playlists {
     fn default() -> Self {
-        let playlist_table = Table::default()
+        let playlist_table = Table::new()
             .add_column(index_column())
             .add_column(combined_title_column());
 

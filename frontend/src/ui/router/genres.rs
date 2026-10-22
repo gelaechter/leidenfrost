@@ -37,7 +37,7 @@ pub struct Genres {
 
 impl Default for Genres {
     fn default() -> Self {
-        let genre_table = Table::default()
+        let genre_table = Table::new()
             .add_column(index_column())
             .add_column(combined_title_column());
 

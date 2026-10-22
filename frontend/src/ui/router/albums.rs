@@ -38,7 +38,7 @@ pub struct Albums {
 
 impl Default for Albums {
     fn default() -> Self {
-        let album_table = Table::default()
+        let album_table = Table::new()
             .add_column(index_column())
             .add_column(combined_title_column())
             .add_column(duration_column());
