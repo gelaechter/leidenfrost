@@ -13,7 +13,7 @@ use crate::ui::{
         table::{Column, Table, TableMsg},
         utils::{IntoLinks, format_duration},
     },
-    router::{Route, Router},
+    router::Route,
 };
 
 use backend::data_view::{AlbumView, RelatedArtist};
@@ -47,7 +47,7 @@ impl Default for AlbumTable {
             .add_column(index_column())
             .add_column(combined_title_column())
             .add_column(duration_column())
-            .on_double_click_row(|row| Router::change_route(Route::Album(row.view.album.id)))
+            .on_double_click_row(|row, state| state.route = Route::Album(row.view.album.id))
     }
 }
 
@@ -91,7 +91,7 @@ pub fn album_table() -> AlbumTable {
 pub fn index_column() -> Column<AlbumRow, AlbumCellMsg> {
     Column::new(
         || column_header("#").into(),
-        |row_data: &AlbumRow| {
+        |row_data: &AlbumRow, _app_state| {
             // Simply display the index
             widget::text(row_data.index).style(muted_text).into()
         },
@@ -104,7 +104,7 @@ pub fn index_column() -> Column<AlbumRow, AlbumCellMsg> {
 pub fn combined_title_column() -> Column<AlbumRow, AlbumCellMsg> {
     Column::new(
         || column_header("Name").into(),
-        |row: &AlbumRow| {
+        |row: &AlbumRow, _app_state| {
             let AlbumRow {
                 view:
                     AlbumView {
@@ -162,7 +162,7 @@ pub fn combined_title_column() -> Column<AlbumRow, AlbumCellMsg> {
             .into()
         },
     )
-    .update(|row_data, message| {
+    .update(|row_data, message, _app_state| {
         // We need to drive the image
         if let AlbumCellMsg::ImageDriver(m) = message {
             row_data
@@ -193,7 +193,7 @@ pub fn duration_column() -> Column<AlbumRow, AlbumCellMsg> {
             })
             .into()
         },
-        |row: &AlbumRow| {
+        |row: &AlbumRow, _app_state| {
             // Display the duration as a simple time string
             widget::text(format_duration(row.view.duration.unwrap_or_default() as f64))
                 .style(muted_text)

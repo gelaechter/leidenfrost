@@ -1,4 +1,4 @@
-use crate::ui::{Receiver, components::track_table::TrackRow};
+use crate::ui::{Receiver, app::AppState, components::track_table::TrackRow};
 use backend::data_view::TrackView;
 use iced::{Element, Task};
 use macros::Receiver;
@@ -55,14 +55,14 @@ pub enum QueueMsg {
 }
 
 impl Queue {
-    pub fn view(&self) -> Element<'_, QueueMsg> {
-        self.table.view().map(QueueMsg::TableDriver)
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, QueueMsg> {
+        self.table.view(app_state).map(QueueMsg::TableDriver)
     }
 
-    pub fn update(&mut self, message: QueueMsg) -> Task<QueueMsg> {
+    pub fn update(&mut self, message: QueueMsg, app_state: &mut AppState) -> Task<QueueMsg> {
         // The table driver needs to return a task
         if let QueueMsg::TableDriver(message) = message {
-            return self.table.update(message).map(QueueMsg::TableDriver);
+            return self.table.update(message, app_state).map(QueueMsg::TableDriver);
         }
 
         // Everything else is just side effects
@@ -70,13 +70,13 @@ impl Queue {
             QueueMsg::Play(track_view) => {
                 self.table.clear();
                 self.current_index = 0;
-                let _ = self.update(QueueMsg::Append(track_view));
+                let _ = self.update(QueueMsg::Append(track_view), app_state);
                 Task::none()
             }
             QueueMsg::PlayAll(track_views) => {
                 self.table.clear();
                 self.current_index = 0;
-                let _ = self.update(QueueMsg::AppendAll(track_views));
+                let _ = self.update(QueueMsg::AppendAll(track_views), app_state);
                 Task::none()
             }
             QueueMsg::Append(track_view) => {

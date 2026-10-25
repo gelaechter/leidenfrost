@@ -22,6 +22,8 @@ use iced::{
 use ordermap::OrderMap;
 use uuid::Uuid;
 
+use crate::ui::app::AppState;
+
 /// A table component
 #[derive(Debug, Clone)]
 pub struct Table<T: std::fmt::Debug + Clone, M> {
@@ -40,7 +42,7 @@ pub struct Table<T: std::fmt::Debug + Clone, M> {
     mouse_position: Point,
     /// Information about a resize process
     resize_info: Option<ResizeInfo>,
-    double_click_callback: Option<fn(T)>,
+    double_click_callback: Option<fn(T, &mut AppState)>,
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +59,7 @@ pub struct ResizeInfo {
 /// of [`Table::update`] can cause data-races; This was discovered when making
 /// searches in the command palette which quickly causes a table to change thus
 /// invalidating a rows index and causing an `index out of bounds`
-impl<T: std::fmt::Debug + Clone, M> Table<T, M> {
+impl<T: std::fmt::Debug + Clone, M: Clone> Table<T, M> {
     pub fn new() -> Self {
         Self {
             rows: OrderMap::new(),
@@ -109,7 +111,12 @@ impl<T: std::fmt::Debug + Clone, M> Table<T, M> {
     }
 
     /// Adds a double click handler to the table
-    pub fn on_double_click_row(mut self, on_click: fn(item: T)) -> Self {
+    //  
+    //  FIXME: This current design for the double click listener might be
+    //  convenient but it's stupid; We want to able to get a Message back into
+    //  the update loop which is why this will have to be redesigned at some
+    //  point
+    pub fn on_double_click_row(mut self, on_click: fn(item: T, state: &mut AppState)) -> Self {
         self.double_click_callback = Some(on_click);
         self
     }
@@ -146,26 +153,27 @@ impl<T> Row<T> {
 /// A function that produces the header of a column
 /// while this header can produce an arbitrary Message `M`, it will not be
 /// driven or reacted to.
-type ColumnHeader<M> = Arc<dyn Fn() -> Element<'static, M> + Send + Sync + 'static>;
+pub trait ColumnHeader<M> = Fn() -> Element<'static, M> + Send + Sync + 'static;
 
 /// A function that presents the row state in a column
-type ColumnView<T, M> = Arc<dyn for<'a> Fn(&'a T) -> Element<'a, M> + Send + Sync + 'static>;
+pub trait ColumnView<'a, T: 'a, M> =
+    Fn(&'a T, &'a AppState) -> Element<'a, M> + Send + Sync + 'static;
 
 /// A function allowing us to update the row state in reaction to a column
 /// view emitted message
-type ColumnUpdate<T, M> = Arc<dyn Fn(&mut T, M) -> Task<M> + Send + Sync + 'static>;
+pub trait ColumnUpdate<T, M> = Fn(&mut T, M, &mut AppState) -> Task<M> + Send + Sync + 'static;
 
 #[derive(Clone)]
 pub struct Column<T, M> {
     /// The header for the column
     /// While this can be any element it cannot mutate state
     /// this is somewhat a given since an element is just a view
-    header: ColumnHeader<M>,
+    header: Arc<dyn ColumnHeader<M>>,
     /// A function that presents the row state in a column
-    view: ColumnView<T, M>,
+    view: Arc<dyn for<'a> ColumnView<'a, T, M>>,
     /// A function allowing us to update the row state in reaction to a column
     /// view emitted message
-    update: ColumnUpdate<T, M>,
+    update: Arc<dyn ColumnUpdate<T, M>>,
     /// How this columns contents are aligned on the x axis
     align_x: alignment::Horizontal,
     /// How this columns contents are aligned on the y axis
@@ -203,12 +211,12 @@ impl<T, M> Column<T, M> {
     /// Creates a new column with a header and a data-view
     pub fn new(
         header: impl Fn() -> Element<'static, M> + Send + Sync + 'static,
-        view: impl for<'a> Fn(&'a T) -> Element<'a, M> + Send + Sync + 'static,
+        view: impl for<'a> ColumnView<'a, T, M>,
     ) -> Column<T, M> {
         Column {
             header: Arc::new(header),
             view: Arc::new(view),
-            update: Arc::new(|_t, _m| Task::none()),
+            update: Arc::new(|_t, _m, _s| Task::none()),
             align_x: alignment::Horizontal::Left,
             align_y: alignment::Vertical::Center,
             width: FillPortion(1),
@@ -221,10 +229,7 @@ impl<T, M> Column<T, M> {
     }
 
     /// Sets the update method for this column if it's stateful
-    pub fn update(
-        mut self,
-        update: impl Fn(&mut T, M) -> Task<M> + Send + Sync + 'static,
-    ) -> Column<T, M> {
+    pub fn update(mut self, update: impl ColumnUpdate<T, M>) -> Column<T, M> {
         self.update = Arc::new(update);
         self
     }
@@ -259,8 +264,8 @@ impl<T, M> Column<T, M> {
     }
 
     /// Renders the view of the column
-    pub fn view<'a>(&self, data: &'a T) -> Element<'a, M> {
-        (self.view)(data)
+    pub fn view<'a>(&self, data: &'a T, app_state: &'a AppState) -> Element<'a, M> {
+        (self.view)(data, app_state)
     }
 }
 
@@ -313,12 +318,12 @@ where
     T: std::fmt::Debug + Clone + MaybeSend + 'static,
     M: std::fmt::Debug + Clone + MaybeSend + 'static,
 {
-    pub fn view(&self) -> Element<'_, TableMsg<M>> {
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, TableMsg<M>> {
         let content = widget::column![
             widget::rule::horizontal(1),
             self.table_header(),
             widget::rule::horizontal(1),
-            self.sliding_window()
+            self.sliding_window(app_state)
         ];
 
         let mouse_area = widget::mouse_area(content)
@@ -336,7 +341,11 @@ where
         mouse_area.into()
     }
 
-    pub fn update(&mut self, message: impl Into<TableMsg<M>>) -> Task<TableMsg<M>> {
+    pub fn update(
+        &mut self,
+        message: impl Into<TableMsg<M>>,
+        app_state: &mut AppState,
+    ) -> Task<TableMsg<M>> {
         match message.into() {
             Message::RowShown(id) => {
                 if let Some(get_mut) = self.rows.get_mut(&id) {
@@ -372,10 +381,12 @@ where
                     return Task::none();
                 };
 
-                (col.update)(&mut row.item, message).map(move |message| Message::ColumnDriver {
-                    id,
-                    col_idx,
-                    message,
+                (col.update)(&mut row.item, message, app_state).map(move |message| {
+                    Message::ColumnDriver {
+                        id,
+                        col_idx,
+                        message,
+                    }
                 })
             }
             Message::None => Task::none(),
@@ -479,7 +490,7 @@ where
                     && let Some(double_click_callback) = self.double_click_callback
                 {
                     log::debug!("Calling double click callback");
-                    double_click_callback(row.item.clone());
+                    double_click_callback(row.item.clone(), app_state);
                 }
 
                 // Deselect all other rows
@@ -568,7 +579,7 @@ where
     /// (I tested this with up to `800_000` rows)
     ///
     /// TODO: refactor this (it reads like shit)
-    pub fn sliding_window(&self) -> Element<'_, TableMsg<M>> {
+    pub fn sliding_window<'a>(&'a self, app_state: &'a AppState) -> Element<'a, TableMsg<M>> {
         let entries: Vec<(&Uuid, &Row<T>)> = self.rows.iter().collect();
 
         // Split the rows into chunks of size CHUNK_ROWS
@@ -578,12 +589,12 @@ where
             .map(|(chunk_idx, chunk)| {
                 // Check if the chunk is visible
                 let chunk: Element<'_, TableMsg<M>> = if self.visible_chunks.contains(&chunk_idx) {
-                    widget::column(chunk.iter().enumerate().map(|(i, (id, row))| {
+                    widget::column(chunk.iter().map(|(id, row)| {
                         let id: Uuid = **id;
                         let row: Element<'_, TableMsg<M>> =
                             if self.rows.get(&id).is_some_and(|state| state.visible) {
                                 // Row is visible so produce the row
-                                self.item_row(id, row)
+                                self.item_row(id, row, app_state)
                             } else {
                                 // Row is invisible (or not yet seen) so
                                 // produce a placeholder
@@ -622,16 +633,21 @@ where
     }
 
     /// A row showing all the columns for an item T
-    pub fn item_row<'a>(&self, id: Uuid, row: &'a Row<T>) -> Element<'a, TableMsg<M>> {
+    pub fn item_row<'a>(
+        &self,
+        id: Uuid,
+        row: &'a Row<T>,
+        app_state: &'a AppState,
+    ) -> Element<'a, TableMsg<M>> {
         // The columns
         let columns = self.columns.iter().enumerate().map(|(col_idx, col)| {
-            widget::container(
-                (col.view)(&row.item).map(move |message| Message::ColumnDriver {
+            widget::container((col.view)(&row.item, app_state).map(move |message| {
+                Message::ColumnDriver {
                     id,
                     col_idx,
                     message,
-                }),
-            )
+                }
+            }))
             .width(col.measured_width - 2.0)
             .height(ROW_HEIGHT)
             .padding(Padding::new(8.0))

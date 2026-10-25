@@ -5,10 +5,13 @@ use iced::{
 
 use backend::api::endpoint_api::{EndpointManager, GetAlbumsParams, Pagination};
 
-use crate::ui::components::{
-    album_table::{AlbumCellMsg, AlbumRow, AlbumTable},
-    style::default_header,
-    table::TableMsg,
+use crate::ui::{
+    app::AppState,
+    components::{
+        album_table::{AlbumCellMsg, AlbumRow, AlbumTable},
+        style::default_header,
+        table::TableMsg,
+    },
 };
 
 /// The tracks route
@@ -38,10 +41,13 @@ pub enum Message {
 }
 
 impl Albums {
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, Message> {
         let header = default_header("Albums", Message::PlayAllAlbums);
 
-        let albums = column![header, self.album_table.view().map(Message::TableDriver)];
+        let albums = column![
+            header,
+            self.album_table.view(app_state).map(Message::TableDriver)
+        ];
 
         widget::sensor(albums)
             .on_show(|_| Message::FetchAlbums)
@@ -49,7 +55,7 @@ impl Albums {
             .into()
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: Message, app_state: &mut AppState) -> Task<Message> {
         match message {
             Message::FetchAlbums => {
                 // Only fetch first time
@@ -82,7 +88,7 @@ impl Albums {
                 self.album_table.extend(row_data);
                 Task::none()
             }
-            Message::TableDriver(m) => self.album_table.update(m).map(Message::TableDriver),
+            Message::TableDriver(m) => self.album_table.update(m, app_state).map(Message::TableDriver),
             Message::PlayAllAlbums => Task::none(),
         }
     }

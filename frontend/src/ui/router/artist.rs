@@ -12,12 +12,12 @@ use iced::{
     },
 };
 
-use crate::ui::components::{
+use crate::ui::{app::AppState, components::{
     album_table::{AlbumRow, AlbumTable, AlbumTableMsg},
     icons::{self, Icon},
     image::{Image, ImgMsg},
     style::header_text,
-};
+}};
 
 #[derive(Default)]
 pub struct Artist {
@@ -55,9 +55,9 @@ pub enum Message {
 const IMAGE_SIZE: u32 = 256;
 
 impl Artist {
-    pub fn view<'a>(&'a self, id: &'a str) -> Element<'a, Message> {
+    pub fn view<'a>(&'a self, id: &'a str, app_state: &'a AppState) -> Element<'a, Message> {
         let container = widget::container(match self.state {
-            PageState::Loaded(ref artist_data) => self.artist_page(artist_data),
+            PageState::Loaded(ref artist_data) => self.artist_page(artist_data, app_state),
             _ => widget::text("Loading...").into(),
         });
 
@@ -67,7 +67,7 @@ impl Artist {
             .into()
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: Message, app_state: &mut AppState) -> Task<Message> {
         match message {
             Message::FetchArtist(id) => {
                 if self.id == Some(id.clone()) {
@@ -124,7 +124,7 @@ impl Artist {
             Message::PlayLast => todo!(),
             Message::TableDriver(message) => {
                 if let PageState::Loaded(ref mut data) = self.state {
-                    data.album_table.update(message).map(Message::TableDriver)
+                    data.album_table.update(message, app_state).map(Message::TableDriver)
                 } else {
                     Task::none()
                 }
@@ -132,8 +132,8 @@ impl Artist {
         }
     }
 
-    pub fn artist_page<'a>(&self, artist_data: &'a ArtistData) -> Element<'a, Message> {
-        widget::column([self.header(artist_data), self.albums(artist_data)])
+    pub fn artist_page<'a>(&self, artist_data: &'a ArtistData, app_state: &'a AppState) -> Element<'a, Message> {
+        widget::column([self.header(artist_data), self.albums(artist_data, app_state)])
             .spacing(40)
             .padding(16)
             .into()
@@ -190,10 +190,10 @@ impl Artist {
             .into()
     }
 
-    fn albums<'a>(&self, artist_data: &'a ArtistData) -> Element<'a, Message> {
+    fn albums<'a>(&self, artist_data: &'a ArtistData, app_state: &'a AppState) -> Element<'a, Message> {
         widget::column([
             header_text("Released albums").size(22).into(),
-            artist_data.album_table.view().map(Message::TableDriver),
+            artist_data.album_table.view(app_state).map(Message::TableDriver),
         ])
         .spacing(8)
         .into()

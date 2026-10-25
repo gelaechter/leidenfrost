@@ -20,13 +20,12 @@ use backend::{
 };
 
 use crate::ui::{
-    components::{
+    app::AppState, components::{
         icons,
         image::{self, Image},
         style::{column_header, default_header, muted_text},
         table::{Column, Table, TableMsg},
-    },
-    router::Route,
+    }, router::Route,
 };
 
 /// The tracks route
@@ -58,10 +57,10 @@ pub enum Message {
 }
 
 impl Genres {
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, Message> {
         let header = default_header("Genres", Message::PlayAllGenres);
 
-        let albums = column![header, self.genre_table.view().map(Message::TableDriver)];
+        let albums = column![header, self.genre_table.view(app_state).map(Message::TableDriver)];
 
         widget::sensor(albums)
             .on_show(|_| Message::FetchGenres)
@@ -69,7 +68,7 @@ impl Genres {
             .into()
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: Message, app_state: &mut AppState) -> Task<Message> {
         match message {
             Message::FetchGenres => {
                 // Only fetch first time
@@ -103,7 +102,7 @@ impl Genres {
                 Task::none()
             }
             Message::TableDriver(message) => {
-                self.genre_table.update(message).map(Message::TableDriver)
+                self.genre_table.update(message, app_state).map(Message::TableDriver)
             }
             Message::PlayAllGenres => Task::none(),
         }
@@ -154,7 +153,7 @@ pub enum GenreCellMsg {
 pub fn index_column() -> Column<GenreRow, GenreCellMsg> {
     Column::new(
         || column_header("#").into(),
-        |row_data: &GenreRow| {
+        |row_data: &GenreRow, _app_state| {
             // Simply display the index
             widget::text(row_data.index).style(muted_text).into()
         },
@@ -167,7 +166,7 @@ pub fn index_column() -> Column<GenreRow, GenreCellMsg> {
 pub fn combined_title_column() -> Column<GenreRow, GenreCellMsg> {
     Column::new(
         || column_header("Name").into(),
-        |row: &GenreRow| {
+        |row: &GenreRow, _app_state| {
             let GenreRow {
                 view: GenreView { genre, .. },
                 image,
@@ -200,7 +199,7 @@ pub fn combined_title_column() -> Column<GenreRow, GenreCellMsg> {
             .into()
         },
     )
-    .update(|row_data, message| {
+    .update(|row_data, message, app_state| {
         // We need to drive the image
         if let GenreCellMsg::ImageDriver(m) = message {
             row_data

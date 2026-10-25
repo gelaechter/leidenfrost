@@ -11,11 +11,10 @@ use backend::{
     data_view::TrackView,
 };
 
-use crate::ui::
-    components::{
+use crate::ui::{app::AppState, components::{
         style::default_header,
         track_table::{TrackRow, TrackTable, TrackTableMsg},
-    }
+    }}
 ;
 
 /// The tracks route
@@ -54,13 +53,13 @@ pub enum Message {
 pub type TracksMsg = Message;
 
 impl Tracks {
-    pub fn view(&self) -> Element<'_, TracksMsg> {
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, TracksMsg> {
         let header = default_header("Tracks", Message::PlayAllTracks);
 
         let tracks = column![
             header,
             self.track_table
-                .view()
+                .view(app_state)
                 .map(|c| Message::TableDriver(Box::new(c)))
         ];
 
@@ -70,7 +69,7 @@ impl Tracks {
             .into()
     }
 
-    pub fn update(&mut self, message: impl Into<TracksMsg>) -> Task<TracksMsg> {
+    pub fn update(&mut self, message: impl Into<TracksMsg>, app_state: &mut AppState) -> Task<TracksMsg> {
         match message.into() {
             Message::FetchTracks => {
                 // Only fetch first time
@@ -111,7 +110,7 @@ impl Tracks {
             }
             Message::TableDriver(m) => self
                 .track_table
-                .update(*m)
+                .update(*m, app_state)
                 .map(|c| Message::TableDriver(Box::new(c))),
             Message::PlayAllTracks => Task::none(),
         }

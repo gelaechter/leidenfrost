@@ -8,10 +8,10 @@ use backend::api::{
     jellyfin::errors::ApiError,
 };
 
-use crate::ui::components::{
+use crate::ui::{app::AppState, components::{
     search_table::{SearchRow, SearchTable, SearchTableMsg},
     style::header_text,
-};
+}};
 
 /// The searchs route
 #[derive(Default)]
@@ -36,7 +36,7 @@ pub enum Message {
 pub type SearchMsg = Message;
 
 impl SearchPage {
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, Message> {
         let header = header_text("Search");
 
         let search_bar =
@@ -46,13 +46,13 @@ impl SearchPage {
             header.into(),
             search_bar.into(),
             self.search_table
-                .view()
+                .view(app_state)
                 .map(|c| Message::TableDriver(Box::new(c))),
         ])
         .into()
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: Message, app_state: &mut AppState) -> Task<Message> {
         match message {
             Message::SearchChanged(query) => {
                 self.query.clone_from(&query);
@@ -87,7 +87,7 @@ impl SearchPage {
             }
             Message::TableDriver(m) => self
                 .search_table
-                .update(*m)
+                .update(*m, app_state)
                 .map(|c| Message::TableDriver(Box::new(c))),
         }
     }

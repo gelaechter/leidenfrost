@@ -14,11 +14,10 @@ use iced::{
     advanced::widget::tree::Tag,
     widget::{self, container::background},
 };
-use macros::Receiver;
 
 use crate::ui::{
     Receiver,
-    command_palette::Message::ChangeRoute,
+    app::AppState,
     router::{
         albums::Albums,
         artist::Artist,
@@ -32,12 +31,10 @@ use crate::ui::{
     widgets::tagged::tagged,
 };
 
-#[derive(Default, Receiver)]
-#[message(RouterMsg)]
+#[derive(Default)]
 pub struct Router {
     /// public so that the app can access the settings
     pub settings: Settings,
-    route: Route,
     tracks: Tracks,
     albums: Albums,
     artists: Artists,
@@ -81,7 +78,7 @@ pub enum Msg {
 pub type RouterMsg = Msg;
 
 impl Router {
-    pub fn view(&self) -> Element<'_, RouterMsg> {
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, RouterMsg> {
         struct Home;
 
         /// Stores a view as well as a tag for use with [`tagged`]
@@ -90,31 +87,31 @@ impl Router {
             tag: Tag,
         }
 
-        let route = match self.route {
+        let route = match app_state.route {
             Route::Home => RouteView {
                 view: widget::container("text").width(Fill).height(Fill).into(),
                 tag: Tag::of::<Home>(),
             },
             Route::Favorites => todo!(),
             Route::Albums => RouteView {
-                view: self.albums.view().map(Msg::AlbumsDriver),
+                view: self.albums.view(app_state).map(Msg::AlbumsDriver),
                 tag: Tag::of::<Albums>(),
             },
             Route::Tracks => RouteView {
-                view: self.tracks.view().map(Msg::TracksDriver),
+                view: self.tracks.view(app_state).map(Msg::TracksDriver),
                 tag: Tag::of::<Tracks>(),
             },
             Route::AlbumArtists => todo!(),
             Route::Artists => RouteView {
-                view: self.artists.view().map(Msg::ArtistsDriver),
+                view: self.artists.view(app_state).map(Msg::ArtistsDriver),
                 tag: Tag::of::<Artists>(),
             },
             Route::Genres => RouteView {
-                view: self.genres.view().map(Msg::GenresDriver),
+                view: self.genres.view(app_state).map(Msg::GenresDriver),
                 tag: Tag::of::<Genres>(),
             },
             Route::Artist(ref id) => RouteView {
-                view: self.artist.view(id).map(Msg::ArtistDriver),
+                view: self.artist.view(id, app_state).map(Msg::ArtistDriver),
                 tag: Tag::of::<Artist>(),
             },
             Route::Genre(_) => todo!(),
@@ -124,7 +121,7 @@ impl Router {
                 tag: Tag::of::<Settings>(),
             },
             Route::Search => RouteView {
-                view: self.search_page.view().map(Msg::SearchDriver),
+                view: self.search_page.view(app_state).map(Msg::SearchDriver),
                 tag: Tag::of::<SearchPage>(),
             },
         };
@@ -138,27 +135,46 @@ impl Router {
             .into()
     }
 
-    pub fn update(&mut self, message: impl Into<RouterMsg>) -> Task<RouterMsg> {
+    pub fn update(
+        &mut self,
+        message: impl Into<RouterMsg>,
+        app_state: &mut AppState,
+    ) -> Task<RouterMsg> {
         match message.into() {
             Msg::ChangeRoute(route) => {
-                self.route = route.clone();
+                app_state.route = route.clone();
                 // Notify the sidebar of the change so it can show the current route
-                Sidebar::send(SidebarMsg::RouteChanged(route));
+                Sidebar::send(SidebarMsg::ChangeRoute(route));
                 Task::none()
             }
-            Msg::TracksDriver(message) => self.tracks.update(message).map(Msg::TracksDriver),
-            Msg::AlbumsDriver(message) => self.albums.update(message).map(Msg::AlbumsDriver),
-            Msg::SettingsDriver(message) => self.settings.update(message).map(Msg::SettingsDriver),
-            Msg::ArtistsDriver(message) => self.artists.update(message).map(Msg::ArtistsDriver),
-            Msg::GenresDriver(message) => self.genres.update(message).map(Msg::GenresDriver),
-            Msg::ArtistDriver(message) => self.artist.update(message).map(Msg::ArtistDriver),
-            Msg::SearchDriver(message) => self.search_page.update(message).map(Msg::SearchDriver),
+            Msg::TracksDriver(message) => self
+                .tracks
+                .update(message, app_state)
+                .map(Msg::TracksDriver),
+            Msg::AlbumsDriver(message) => self
+                .albums
+                .update(message, app_state)
+                .map(Msg::AlbumsDriver),
+            Msg::SettingsDriver(message) => self
+                .settings
+                .update(message, app_state)
+                .map(Msg::SettingsDriver),
+            Msg::ArtistsDriver(message) => self
+                .artists
+                .update(message, app_state)
+                .map(Msg::ArtistsDriver),
+            Msg::GenresDriver(message) => self
+                .genres
+                .update(message, app_state)
+                .map(Msg::GenresDriver),
+            Msg::ArtistDriver(message) => self
+                .artist
+                .update(message, app_state)
+                .map(Msg::ArtistDriver),
+            Msg::SearchDriver(message) => self
+                .search_page
+                .update(message, app_state)
+                .map(Msg::SearchDriver),
         }
-    }
-}
-
-impl Router {
-    pub fn change_route(route: Route) {
-        Self::send(Msg::ChangeRoute(route));
     }
 }

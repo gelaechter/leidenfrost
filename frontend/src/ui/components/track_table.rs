@@ -51,7 +51,7 @@ impl Default for TrackTable {
             .add_column(album_column())
             .add_column(duration_column())
             .add_column(genre_column())
-            .on_double_click_row(|track| {
+            .on_double_click_row(|track, _state| {
                 GenericPlayer::send(PlayerMsg::Play(track.view));
             })
     }
@@ -97,7 +97,7 @@ pub fn track_table() -> TrackTable {
 pub fn genre_column() -> Column<TrackRow, TrackCellMsg> {
     Column::new(
         || column_header("Genres").into(),
-        |row: &TrackRow| {
+        |row: &TrackRow, _app_state| {
             // Turn the genres into a list of clickable links
             // when clicked it should take you there
             row.view
@@ -133,7 +133,7 @@ pub fn duration_column() -> Column<TrackRow, TrackCellMsg> {
             })
             .into()
         },
-        |row: &TrackRow| {
+        |row: &TrackRow, _app_state| {
             // Display the duration as a simple time string
             widget::text(format_duration(
                 row.view.track.duration.unwrap_or_default() as f64
@@ -150,7 +150,7 @@ pub fn duration_column() -> Column<TrackRow, TrackCellMsg> {
 pub fn album_column() -> Column<TrackRow, TrackCellMsg> {
     Column::new(
         || column_header("Album").into(),
-        |row: &TrackRow| {
+        |row: &TrackRow, _app_state| {
             let album_id = row.view.track.album_id.clone();
             if let Some(album_id) = album_id {
                 // Display the album name as clickable link that takes you there
@@ -183,7 +183,7 @@ pub fn album_column() -> Column<TrackRow, TrackCellMsg> {
 pub fn combined_title_column() -> Column<TrackRow, TrackCellMsg> {
     Column::new(
         || column_header("Name").into(),
-        |row: &TrackRow| {
+        |row: &TrackRow, _app_state| {
             let TrackRow {
                 view: TrackView { track, artists, .. },
                 image,
@@ -236,7 +236,7 @@ pub fn combined_title_column() -> Column<TrackRow, TrackCellMsg> {
             .into()
         },
     )
-    .update(|row_data, message| {
+    .update(|row_data, message, _app_state| {
         // We need to drive the image
         if let TrackCellMsg::ImageDriver(m) = message {
             row_data
@@ -256,7 +256,7 @@ pub fn combined_title_column() -> Column<TrackRow, TrackCellMsg> {
 pub fn index_column() -> Column<TrackRow, TrackCellMsg> {
     Column::new(
         || column_header("#").into(),
-        |row_data: &TrackRow| {
+        |row_data: &TrackRow, _app_state| {
             // Simply display the index
             widget::text(row_data.index).style(muted_text).into()
         },

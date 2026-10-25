@@ -12,6 +12,7 @@ use macros::Receiver;
 
 use crate::ui::{
     Receiver,
+    app::AppState,
     components::{icons, style::header_text},
     router::settings::endpoint::{EndpointMsg, EndpointSettings},
 };
@@ -103,7 +104,7 @@ impl Settings {
         widget::sensor(view).on_show(|_| Cmd::Show).into()
     }
 
-    pub fn update(&mut self, message: SettingsMsg) -> Task<SettingsMsg> {
+    pub fn update(&mut self, message: SettingsMsg, app_state: &mut AppState) -> Task<SettingsMsg> {
         match message {
             Cmd::Show => {
                 if self.available_font_families.len() > font::Family::VARIANTS.len() {

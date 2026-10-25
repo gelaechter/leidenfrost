@@ -22,6 +22,7 @@ use macros::Receiver;
 
 use crate::ui::{
     Receiver,
+    app::AppState,
     components::{
         icons::{self, Icon},
         image::{self, Image},
@@ -32,7 +33,6 @@ use crate::ui::{
 #[derive(Default, Receiver)]
 #[message(SidebarMsg)]
 pub struct Sidebar {
-    route: Route,
     playlists: Vec<SidebarPlaylist>,
 }
 
@@ -46,10 +46,8 @@ pub struct SidebarPlaylist {
 pub enum Cmd {
     FetchPlaylists,
     ImageDriver((usize, image::ImgMsg)),
-    /// The route has changed
-    RouteChanged(Route),
-    /// Updates the route by notifying th router
-    NotifyRouter(Route),
+    /// Change the route because the user clicked a button
+    ChangeRoute(Route),
     PlaylistsFetched(Vec<SidebarPlaylist>),
 }
 
@@ -66,7 +64,7 @@ impl From<PlaylistView> for SidebarPlaylist {
 pub type SidebarMsg = Cmd;
 
 impl Sidebar {
-    pub fn view(&self) -> Element<'_, SidebarMsg> {
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, SidebarMsg> {
         let bold = Font {
             weight: font::Weight::Medium,
             ..Font::DEFAULT
@@ -75,21 +73,53 @@ impl Sidebar {
         container(
             column![
                 text("My Library").font(bold),
-                self.tab_button(icons::home(), text("Home").font(bold), Route::Home),
-                self.tab_button(icons::search(), text("Search").font(bold), Route::Search),
+                self.tab_button(
+                    icons::home(),
+                    text("Home").font(bold),
+                    Route::Home,
+                    &app_state.route
+                ),
+                self.tab_button(
+                    icons::search(),
+                    text("Search").font(bold),
+                    Route::Search,
+                    &app_state.route
+                ),
                 self.tab_button(
                     icons::heart(),
                     text("Favorites").font(bold),
-                    Route::Favorites
+                    Route::Favorites,
+                    &app_state.route
                 ),
-                self.tab_button(icons::disc(), text("Albums").font(bold), Route::Albums),
-                self.tab_button(icons::music(), text("Tracks").font(bold), Route::Tracks),
-                self.tab_button(icons::user(), text("Artists").font(bold), Route::Artists),
-                self.tab_button(icons::tag(), text("Genres").font(bold), Route::Genres),
+                self.tab_button(
+                    icons::disc(),
+                    text("Albums").font(bold),
+                    Route::Albums,
+                    &app_state.route
+                ),
+                self.tab_button(
+                    icons::music(),
+                    text("Tracks").font(bold),
+                    Route::Tracks,
+                    &app_state.route
+                ),
+                self.tab_button(
+                    icons::user(),
+                    text("Artists").font(bold),
+                    Route::Artists,
+                    &app_state.route
+                ),
+                self.tab_button(
+                    icons::tag(),
+                    text("Genres").font(bold),
+                    Route::Genres,
+                    &app_state.route
+                ),
                 self.tab_button(
                     icons::settings(),
                     text("Settings").font(bold),
-                    Route::Settings
+                    Route::Settings,
+                    &app_state.route
                 ),
                 space().height(28),
                 text("Playlists").font(bold),
@@ -101,7 +131,11 @@ impl Sidebar {
         .into()
     }
 
-    pub fn update(&mut self, message: impl Into<SidebarMsg>) -> Task<SidebarMsg> {
+    pub fn update(
+        &mut self,
+        message: impl Into<SidebarMsg>,
+        app_state: &mut AppState,
+    ) -> Task<SidebarMsg> {
         match message.into() {
             Cmd::FetchPlaylists => {
                 // Only fetch first time
@@ -128,13 +162,8 @@ impl Sidebar {
                 self.playlists = playlist_views;
                 Task::none()
             }
-            Cmd::RouteChanged(route) => {
-                self.route = route;
-                Task::none()
-            }
-            Cmd::NotifyRouter(route) => {
-                use super::router;
-                router::Router::send(router::RouterMsg::ChangeRoute(route));
+            Cmd::ChangeRoute(new_route) => {
+                app_state.route = new_route;
                 Task::none()
             }
             Cmd::ImageDriver((idx, message)) => {
@@ -156,38 +185,33 @@ impl Sidebar {
         &'a self,
         icon: Icon<'a>,
         text: impl Into<Element<'a, SidebarMsg>>,
-        route: Route,
+        button_route: Route,
+        current_route: &'a Route,
     ) -> Element<'a, SidebarMsg> {
-        widget::button(
-            row![
-                icon.style(text::default),
-                text.into()
-            ]
-            .spacing(8),
-        )
-        .on_press(Cmd::NotifyRouter(route.clone()))
-        .style(move |theme, status| {
-            let palette = theme.palette();
-            button::Style {
-                // Round the button
-                border: Border::default().rounded(2),
-                // Make background gray if hovered over
-                background: if matches!(status, button::Status::Hovered) {
-                    Some(Background::Color(palette.background.weak.color))
-                } else {
-                    None
-                },
-                // Make text blue if route is selected
-                text_color: if self.route == route {
-                    palette.primary.strong.color
-                } else {
-                    palette.background.base.text
-                },
-                ..Default::default()
-            }
-        })
-        .width(Fill)
-        .into()
+        widget::button(row![icon.style(text::default), text.into()].spacing(8))
+            .on_press(Cmd::ChangeRoute(button_route.clone()))
+            .style(move |theme, status| {
+                let palette = theme.palette();
+                button::Style {
+                    // Round the button
+                    border: Border::default().rounded(2),
+                    // Make background gray if hovered over
+                    background: if matches!(status, button::Status::Hovered) {
+                        Some(Background::Color(palette.background.weak.color))
+                    } else {
+                        None
+                    },
+                    // Make text blue if route is selected
+                    text_color: if *current_route == button_route {
+                        palette.primary.strong.color
+                    } else {
+                        palette.background.base.text
+                    },
+                    ..Default::default()
+                }
+            })
+            .width(Fill)
+            .into()
     }
 
     pub fn playlists(&self) -> Element<'_, SidebarMsg> {

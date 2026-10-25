@@ -6,14 +6,14 @@ use iced::{
 use strum::{Display, EnumIter, IntoEnumIterator};
 
 use crate::ui::{
-    Receiver,
+    app::AppState,
     command_palette::Message::ChangeContent,
     components::{
         icons,
-        search_table::{self, SearchCellMsg, SearchRow, SearchTable},
+        search_table::{SearchCellMsg, SearchRow, SearchTable},
         table::TableMsg,
     },
-    router::{Route, Router, RouterMsg},
+    router::Route,
 };
 
 pub struct CommandPalette {
@@ -51,7 +51,7 @@ impl CommandPalette {
     /// we use this to focus it when it becomes visible
     const INPUT_ID: Id = Id::new("palette_input");
 
-    pub fn update(&mut self, msg: Message) -> Task<Message> {
+    pub fn update(&mut self, msg: Message, app_state: &mut AppState) -> Task<Message> {
         match msg {
             Message::ChangeContent(new_content) => {
                 // Update command
@@ -93,10 +93,10 @@ impl CommandPalette {
             }
             Message::SearchTableDriver(message) => self
                 .search_result_table
-                .update(message)
+                .update(message, app_state)
                 .map(Message::SearchTableDriver),
-            Message::ChangeRoute(route) => {
-                Router::send(RouterMsg::ChangeRoute(route));
+            Message::ChangeRoute(new_route) => {
+                app_state.route = new_route;
                 Task::none()
             }
             Message::SetActive(active) => {
@@ -106,7 +106,7 @@ impl CommandPalette {
         }
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, Message> {
         if !self.visible {
             return widget::void().into();
         }
@@ -123,7 +123,7 @@ impl CommandPalette {
                         .into(),
                     widget::space().height(8).into(),
                     // Results
-                    widget::scrollable(self.view_results()).into(),
+                    widget::scrollable(self.view_results(app_state)).into(),
                 ]))
                 .style(container::bordered_box)
                 .height(Length::Fit.max(400))
@@ -135,7 +135,7 @@ impl CommandPalette {
         .into()
     }
 
-    fn view_results(&self) -> Element<'_, Message> {
+    fn view_results<'a>(&'a self, app_state: &'a AppState) -> Element<'a, Message> {
         let results: Element<'_, Message> = match &self.result {
             PaletteResults::Empty => widget::text(
                 "?: Search everything\n\
@@ -145,7 +145,7 @@ impl CommandPalette {
             // Search results
             PaletteResults::SearchResults(_) => self
                 .search_result_table
-                .view()
+                .view(app_state)
                 .map(Message::SearchTableDriver),
             // Page results
             PaletteResults::Routes(items) => widget::column(items.iter().map(|route| {

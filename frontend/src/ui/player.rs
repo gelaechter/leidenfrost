@@ -17,9 +17,7 @@ use backend::{
 };
 
 use crate::ui::{
-    Receiver,
-    playerbar::{PlayerBar, PlayerBarMsg},
-    queue::{Queue, QueueMsg},
+    Receiver, app::AppState, playerbar::{PlayerBar, PlayerBarMsg}, queue::{Queue, QueueMsg},
 };
 
 use macros::Receiver;
@@ -72,9 +70,9 @@ static PLAYER_EVENT_CHANNEL: LazyLock<(
     (tx, Mutex::new(rx))
 });
 
-/// The player is a [`Receiver`] for [`PlayerMsg`] so that we can arbitrarily add items
-/// ot the queue
-#[derive(Receiver)]
+/// The player is a [`Receiver`] for [`PlayerMsg`] so that we can arbitrarily
+/// add items ot the queue
+#[derive(Debug, Receiver)]
 #[message(PlayerMsg)]
 pub struct GenericPlayer {
     player_impl: Option<PlayerImpl>,
@@ -91,6 +89,14 @@ impl Default for GenericPlayer {
 /// An abstraction over the current player
 pub enum PlayerImpl {
     MpvPlayer(MpvPlayer),
+}
+
+impl std::fmt::Debug for PlayerImpl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MpvPlayer(_arg0) => f.write_str("MpvPlayer"),
+        }
+    }
 }
 
 impl PlayerImpl {
@@ -118,7 +124,7 @@ impl PlayerImpl {
 }
 
 impl GenericPlayer {
-    pub fn update(&mut self, message: impl Into<PlayerMsg>) {
+    pub fn update(&mut self, message: impl Into<PlayerMsg>, _app_state: &mut AppState) {
         let Some(player_impl) = self.player_impl.as_ref() else {
             return;
         };

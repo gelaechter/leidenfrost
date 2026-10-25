@@ -13,14 +13,11 @@ use iced::{
 use macros::Receiver;
 
 use crate::ui::{
-    Receiver,
-    components::{
+    Receiver, app::AppState, components::{
         icons,
         style::{em_dash, muted_text},
         utils::{IntoLink, IntoLinks, format_duration},
-    },
-    player::{GenericPlayer, PlayerMsg},
-    router::{Route, Router, RouterMsg},
+    }, player::{GenericPlayer, PlayerMsg}, router::{Route, Router, RouterMsg},
 };
 use backend::{
     data_view::TrackView,
@@ -98,7 +95,7 @@ pub type PlayerBarMsg = Cmd;
 
 impl PlayerBar {
     /// Mutates the model whenever a message is dispatched
-    pub fn update(&mut self, message: impl Into<PlayerBarMsg>) -> Task<PlayerBarMsg> {
+    pub fn update(&mut self, message: impl Into<PlayerBarMsg>, app_state: &mut AppState) -> Task<PlayerBarMsg> {
         match message.into() {
             Cmd::Event(e) => {
                 match e {
@@ -142,7 +139,9 @@ impl PlayerBar {
                     Notify::PlayRandom => todo!(),
                     Notify::Seek(f) => GenericPlayer::send(PlayerMsg::Seek(f)),
                     Notify::Volume(u) => GenericPlayer::send(PlayerMsg::Volume(u)),
-                    Notify::ChangeRoute(r) => Router::send(RouterMsg::ChangeRoute(r)),
+                    Notify::ChangeRoute(new_route) => {
+                        app_state.route = new_route;
+                    },
                 };
                 Task::none()
             }

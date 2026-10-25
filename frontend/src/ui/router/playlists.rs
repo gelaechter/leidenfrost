@@ -18,9 +18,9 @@ use backend::{
     api::endpoint_api::{EndpointManager, GetPlaylistsParams, Pagination},
     data_view::PlaylistView,
 };
-use uuid::Uuid;
 
 use crate::ui::{
+    app::AppState,
     components::{
         icons,
         image::{self, Image},
@@ -59,10 +59,15 @@ pub enum Message {
 }
 
 impl Playlists {
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, Message> {
         let header = default_header("Playlists", Message::PlayAllPlaylists);
 
-        let albums = column![header, self.playlist_table.view().map(Message::TableDriver)];
+        let albums = column![
+            header,
+            self.playlist_table
+                .view(app_state)
+                .map(Message::TableDriver)
+        ];
 
         widget::sensor(albums)
             .on_show(|_| Message::FetchPlaylists)
@@ -70,7 +75,7 @@ impl Playlists {
             .into()
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: Message, app_state: &mut AppState) -> Task<Message> {
         match message {
             Message::FetchPlaylists => {
                 // Only fetch first time
@@ -103,7 +108,10 @@ impl Playlists {
                 self.playlist_table.extend(row_data);
                 Task::none()
             }
-            Message::TableDriver(m) => self.playlist_table.update(m).map(Message::TableDriver),
+            Message::TableDriver(m) => self
+                .playlist_table
+                .update(m, app_state)
+                .map(Message::TableDriver),
             Message::PlayAllPlaylists => Task::none(),
         }
     }
@@ -153,7 +161,7 @@ pub enum PlaylistCellMsg {
 pub fn index_column() -> Column<PlaylistRow, PlaylistCellMsg> {
     Column::new(
         || column_header("#").into(),
-        |row_data: &PlaylistRow| {
+        |row_data: &PlaylistRow, _app_state| {
             // Simply display the index
             widget::text(row_data.index).style(muted_text).into()
         },
@@ -166,7 +174,7 @@ pub fn index_column() -> Column<PlaylistRow, PlaylistCellMsg> {
 pub fn combined_title_column() -> Column<PlaylistRow, PlaylistCellMsg> {
     Column::new(
         || column_header("Name").into(),
-        |row: &PlaylistRow| {
+        |row: &PlaylistRow, _app_state| {
             let PlaylistRow {
                 view: PlaylistView { playlist, .. },
                 image,
@@ -202,7 +210,7 @@ pub fn combined_title_column() -> Column<PlaylistRow, PlaylistCellMsg> {
             .into()
         },
     )
-    .update(|row_data, message| {
+    .update(|row_data, message, _app_state| {
         // We need to drive the image
         if let PlaylistCellMsg::ImageDriver(m) = message {
             row_data

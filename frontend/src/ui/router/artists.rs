@@ -20,14 +20,13 @@ use backend::{
 };
 
 use crate::ui::{
-    components::{
+    app::AppState, components::{
         icons,
         image::{self, Image},
         style::{column_header, default_header, muted_text},
         table::{Column, Table, TableMsg},
         utils::format_duration,
-    },
-    router::{Route, Router},
+    }, router::Route,
 };
 
 /// The tracks route
@@ -42,8 +41,8 @@ impl Default for Artists {
             .add_column(index_column())
             .add_column(combined_title_column())
             .add_column(duration_column())
-            .on_double_click_row(|row| {
-                Router::change_route(Route::Artist(row.view.artist.id));
+            .on_double_click_row(|row, state| {
+                state.route = Route::Artist(row.view.artist.id);
             });
 
         Self { artist_table }
@@ -63,10 +62,10 @@ pub enum Message {
 }
 
 impl Artists {
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, Message> {
         let header = default_header("Artists", Message::PlayAllArtists);
 
-        let albums = column![header, self.artist_table.view().map(Message::TableDriver)];
+        let albums = column![header, self.artist_table.view(app_state).map(Message::TableDriver)];
 
         widget::sensor(albums)
             .on_show(|_| Message::FetchArtists)
@@ -74,7 +73,7 @@ impl Artists {
             .into()
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: Message, app_state: &mut AppState) -> Task<Message> {
         match message {
             Message::FetchArtists => {
                 // Only fetch first time
@@ -107,7 +106,7 @@ impl Artists {
                 self.artist_table.extend(row_data);
                 Task::none()
             }
-            Message::TableDriver(m) => self.artist_table.update(m).map(Message::TableDriver),
+            Message::TableDriver(m) => self.artist_table.update(m, app_state).map(Message::TableDriver),
             Message::PlayAllArtists => Task::none(),
         }
     }
@@ -157,7 +156,7 @@ pub enum ArtistCellMsg {
 pub fn index_column() -> Column<ArtistRow, ArtistCellMsg> {
     Column::new(
         || column_header("#").into(),
-        |row_data: &ArtistRow| {
+        |row_data: &ArtistRow, _app_state| {
             // Simply display the index
             widget::text(row_data.index).style(muted_text).into()
         },
@@ -170,7 +169,7 @@ pub fn index_column() -> Column<ArtistRow, ArtistCellMsg> {
 pub fn combined_title_column() -> Column<ArtistRow, ArtistCellMsg> {
     Column::new(
         || column_header("Name").into(),
-        |row: &ArtistRow| {
+        |row: &ArtistRow, _app_state| {
             let ArtistRow {
                 view: ArtistView { artist, .. },
                 image,
@@ -204,7 +203,7 @@ pub fn combined_title_column() -> Column<ArtistRow, ArtistCellMsg> {
             .into()
         },
     )
-    .update(|row_data, message| {
+    .update(|row_data, message, _app_state| {
         // We need to drive the image
         if let ArtistCellMsg::ImageDriver(m) = message {
             row_data
@@ -235,7 +234,7 @@ pub fn duration_column() -> Column<ArtistRow, ArtistCellMsg> {
             })
             .into()
         },
-        |row: &ArtistRow| {
+        |row: &ArtistRow, _app_state| {
             // Display the duration as a simple time string
             widget::text(format_duration(row.view.duration.unwrap_or_default() as f64))
                 .style(muted_text)

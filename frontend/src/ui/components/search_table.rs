@@ -3,10 +3,18 @@
 use std::time::Duration;
 
 use crate::ui::{
-    Receiver, components::{
-        album_table::{self, AlbumCellMsg, AlbumRow}, icons, image::{self, Image}, style::{em_dash, muted_text}, table::{Column, Table, TableMsg}, track_table::{self, TrackCellMsg, TrackRow},
-    }, player::{GenericPlayer, PlayerMsg}, router::{
-        Route, Router, RouterMsg,
+    Receiver,
+    components::{
+        album_table::{self, AlbumCellMsg, AlbumRow},
+        icons,
+        image::{self, Image},
+        style::{em_dash, muted_text},
+        table::{Column, Table, TableMsg},
+        track_table::{self, TrackCellMsg, TrackRow},
+    },
+    player::{GenericPlayer, PlayerMsg},
+    router::{
+        Route,
         artists::{self, ArtistCellMsg, ArtistRow},
         genres::{self, GenreCellMsg, GenreRow},
         playlists::{self, PlaylistCellMsg, PlaylistRow},
@@ -72,16 +80,16 @@ impl Default for SearchTable {
     fn default() -> Self {
         SearchTable::new()
             .add_column(combined_display())
-            .on_double_click_row(|row| {
+            .on_double_click_row(|row, state| {
                 log::debug!("Double clicked search table row");
                 match row {
                     SearchRow::Track(track_row) => {
                         GenericPlayer::send(PlayerMsg::Play(track_row.view));
                     }
                     // Navigate to the artist
-                    SearchRow::Artist(artist_row) => Router::send(RouterMsg::ChangeRoute(
-                        Route::Artist(artist_row.view.artist.id.clone()),
-                    )),
+                    SearchRow::Artist(artist_row) => {
+                        state.route = Route::Artist(artist_row.view.artist.id.clone())
+                    }
                     SearchRow::Album(album_row) => todo!(),
                     SearchRow::Playlist(playlist_row) => todo!(),
                     SearchRow::Genre(genre_row) => todo!(),
@@ -95,7 +103,7 @@ impl Default for SearchTable {
 pub fn combined_lyrics_column() -> Column<LyricsRow, LyricsCellMsg> {
     Column::new(
         || widget::void().into(),
-        |row: &LyricsRow| {
+        |row: &LyricsRow, _app_state| {
             let LyricsRow {
                 view: TrackView { track, .. },
                 image,
@@ -142,7 +150,7 @@ pub fn combined_lyrics_column() -> Column<LyricsRow, LyricsCellMsg> {
             .into()
         },
     )
-    .update(|row_data, message| {
+    .update(|row_data, message, _app_state| {
         // We need to drive the image
         if let LyricsCellMsg::ImageDriver(m) = message {
             row_data
@@ -198,29 +206,29 @@ pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
     Column::new(
         || widget::void().into(),
         // Show the combined title for each entry
-        |row: &SearchRow| match row {
+        |row: &SearchRow, app_state| match row {
             SearchRow::Track(track_row) => track_table::combined_title_column()
-                .view(track_row)
+                .view(track_row, app_state)
                 .map(SearchCellMsg::Track),
             SearchRow::Artist(artist_row) => artists::combined_title_column()
-                .view(artist_row)
+                .view(artist_row, app_state)
                 .map(SearchCellMsg::Artist),
             SearchRow::Album(album_row) => album_table::combined_title_column()
-                .view(album_row)
+                .view(album_row, app_state)
                 .map(SearchCellMsg::Album),
             SearchRow::Playlist(playlist_row) => playlists::combined_title_column()
-                .view(playlist_row)
+                .view(playlist_row, app_state)
                 .map(SearchCellMsg::Playlist),
             SearchRow::Genre(genre_row) => genres::combined_title_column()
-                .view(genre_row)
+                .view(genre_row, app_state)
                 .map(SearchCellMsg::Genre),
             // The lyric entry needs a custom display
             SearchRow::Lyric(lyrics_row) => combined_lyrics_column()
-                .view(lyrics_row)
+                .view(lyrics_row, app_state)
                 .map(SearchCellMsg::Lyric),
         },
     )
-    .update(|row_data, message| {
+    .update(|row_data, message, app_state| {
         use SearchCellMsg as M;
         use SearchRow as R;
 
@@ -235,7 +243,7 @@ pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
                     .map(TrackCellMsg::ImageDriver)
                     .map(SearchCellMsg::Track),
                 TrackCellMsg::ChangeRoute(route) => {
-                    Router::send(RouterMsg::ChangeRoute(route));
+                    app_state.route = route;
                     Task::none()
                 }
             },
@@ -248,7 +256,7 @@ pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
                     .map(ArtistCellMsg::ImageDriver)
                     .map(SearchCellMsg::Artist),
                 ArtistCellMsg::ChangeRoute(route) => {
-                    Router::send(RouterMsg::ChangeRoute(route));
+                    app_state.route = route;
                     Task::none()
                 }
             },
@@ -261,7 +269,7 @@ pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
                     .map(AlbumCellMsg::ImageDriver)
                     .map(SearchCellMsg::Album),
                 AlbumCellMsg::ChangeRoute(route) => {
-                    Router::send(RouterMsg::ChangeRoute(route));
+                    app_state.route = route;
                     Task::none()
                 }
             },
@@ -274,7 +282,7 @@ pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
                     .map(PlaylistCellMsg::ImageDriver)
                     .map(SearchCellMsg::Playlist),
                 PlaylistCellMsg::ChangeRoute(route) => {
-                    Router::send(RouterMsg::ChangeRoute(route));
+                    app_state.route = route;
                     Task::none()
                 }
             },
@@ -287,7 +295,7 @@ pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
                     .map(GenreCellMsg::ImageDriver)
                     .map(SearchCellMsg::Genre),
                 GenreCellMsg::ChangeRoute(route) => {
-                    Router::send(RouterMsg::ChangeRoute(route));
+                    app_state.route = route;
                     Task::none()
                 }
             },
@@ -300,7 +308,7 @@ pub fn combined_display() -> Column<SearchRow, SearchCellMsg> {
                     .map(LyricsCellMsg::ImageDriver)
                     .map(SearchCellMsg::Lyric),
                 LyricsCellMsg::ChangeRoute(route) => {
-                    Router::send(RouterMsg::ChangeRoute(route));
+                    app_state.route = route;
                     Task::none()
                 }
             },

@@ -5,7 +5,6 @@ use iced::{
     Length::Fill,
     Subscription, Task, Theme,
     keyboard::{self, Key, key::Named},
-    theme::palette,
     widget::{
         self,
         pane_grid::{Axis, Configuration, ResizeEvent},
@@ -20,12 +19,20 @@ use crate::ui::{
     player::{GenericPlayer, PlayerMsg},
     playerbar::{PlayerBar, PlayerBarMsg},
     queue::{self, Queue, QueueMsg},
-    router::{Router, RouterMsg, settings::SettingsMsg},
+    router::{Route, Router, RouterMsg, settings::SettingsMsg},
     sidebar::{Sidebar, SidebarMsg},
 };
 
+#[derive(Debug, Default)]
+pub struct AppState {
+    player: GenericPlayer,
+    pub(crate) route: Route,
+}
+
 /// App is the top level model in this application
 pub struct App {
+    /// "dependency injected" global state
+    state: AppState,
     /// These panes are the main layout of the app. They show:
     /// - the sidebar (containing navigation)
     /// - the main window (containing the router/routes)
@@ -41,6 +48,8 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
+        let state = AppState::default();
+
         let sidebar = Sidebar::default();
         let router = Router::default();
         let queue = Queue::default();
@@ -62,6 +71,7 @@ impl Default for App {
         });
 
         Self {
+            state,
             panes,
             sidebar,
             router,
@@ -146,10 +156,13 @@ impl App {
                 // Pane grid consisting of sidebar, main window (router) and queue
                 pane_grid(&self.panes, |_pane, state, _is_maximized| {
                     pane_grid::Content::new(match state {
-                        Pane::Sidebar => self.sidebar.view().map(Message::Sidebar),
-                        Pane::Queue => self.queue.view().map(|m| Message::Queue(Box::new(m))),
+                        Pane::Sidebar => self.sidebar.view(&self.state).map(Message::Sidebar),
+                        Pane::Queue => self
+                            .queue
+                            .view(&self.state)
+                            .map(|m| Message::Queue(Box::new(m))),
                         // The router view s
-                        Pane::Router => self.router.view().map(Message::Router),
+                        Pane::Router => self.router.view(&self.state).map(Message::Router),
                     })
                 })
                 .on_resize(10, Message::PaneResized)
@@ -159,7 +172,9 @@ impl App {
             ])
             .into(),
             // The command palette which floats above the base plane
-            self.command_palette.view().map(Message::CommandPalette),
+            self.command_palette
+                .view(&self.state)
+                .map(Message::CommandPalette),
         ]))
         .height(Fill)
         .width(Fill)
@@ -172,15 +187,22 @@ impl App {
                 self.panes.resize(split, ratio);
                 Task::none()
             }
-            Message::Sidebar(sidebar_message) => {
-                self.sidebar.update(sidebar_message).map(Message::Sidebar)
-            }
+            Message::Sidebar(sidebar_message) => self
+                .sidebar
+                .update(sidebar_message, &mut self.state)
+                .map(Message::Sidebar),
             Message::Queue(queue_message) => self
                 .queue
-                .update(*queue_message)
+                .update(*queue_message, &mut self.state)
                 .map(|m| Message::Queue(Box::new(m))),
-            Message::Router(message) => self.router.update(message).map(Message::Router),
-            Message::PlayerBar(message) => self.player_bar.update(message).map(Message::PlayerBar),
+            Message::Router(message) => self
+                .router
+                .update(message, &mut self.state)
+                .map(Message::Router),
+            Message::PlayerBar(message) => self
+                .player_bar
+                .update(message, &mut self.state)
+                .map(Message::PlayerBar),
             Message::KeyboardEvent(event) => {
                 log::trace!("Received keyboard event: {event:?}");
                 match event {
@@ -189,19 +211,23 @@ impl App {
                         ..
                     } => self
                         .command_palette
-                        .update(command_palette::Message::Toggle)
+                        .update(command_palette::Message::Toggle, &mut self.state)
                         .map(Message::CommandPalette),
                     _ => Task::none(),
                 }
             }
             Message::Player(message) => {
-                self.player.update(*message);
+                self.player.update(*message, &mut self.state);
                 Task::none()
             }
-            Message::Settings(cmd) => self.router.settings.update(cmd).map(Message::Settings),
+            Message::Settings(cmd) => self
+                .router
+                .settings
+                .update(cmd, &mut self.state)
+                .map(Message::Settings),
             Message::CommandPalette(message) => self
                 .command_palette
-                .update(message)
+                .update(message, &mut self.state)
                 .map(Message::CommandPalette),
         }
     }
