@@ -6,7 +6,6 @@ use std::{
 };
 
 use crate::ui::{
-    Receiver,
     components::{
         icons,
         image::{self, Image},
@@ -14,7 +13,7 @@ use crate::ui::{
         table::{Column, Table, TableMsg},
         utils::{IntoLink, IntoLinks, format_duration},
     },
-    player::{GenericPlayer, PlayerMsg},
+    player::PlayerMsg,
     router::Route,
 };
 
@@ -51,8 +50,8 @@ impl Default for TrackTable {
             .add_column(album_column())
             .add_column(duration_column())
             .add_column(genre_column())
-            .on_double_click_row(|track, _state| {
-                GenericPlayer::send(PlayerMsg::Play(track.view));
+            .on_double_click_row(|track, state| {
+                state.player.update(PlayerMsg::Play(track.view));
             })
     }
 }

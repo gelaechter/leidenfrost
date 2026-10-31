@@ -16,7 +16,6 @@ use iced::{
 };
 
 use crate::ui::{
-    Receiver,
     app::AppState,
     router::{
         albums::Albums,
@@ -27,7 +26,6 @@ use crate::ui::{
         settings::{Settings, SettingsMsg},
         tracks::Tracks,
     },
-    sidebar::{Sidebar, SidebarMsg},
     widgets::tagged::tagged,
 };
 
@@ -144,7 +142,6 @@ impl Router {
             Msg::ChangeRoute(route) => {
                 app_state.route = route.clone();
                 // Notify the sidebar of the change so it can show the current route
-                Sidebar::send(SidebarMsg::ChangeRoute(route));
                 Task::none()
             }
             Msg::TracksDriver(message) => self

@@ -75,6 +75,12 @@ impl<T: std::fmt::Debug + Clone, M: Clone> Table<T, M> {
         self.rows.is_empty()
     }
 
+    pub fn get_index(&self, index: usize) -> Option<&T> {
+        self.rows
+            .get_index(index)
+            .map(|(_uuid, Row { item, .. })| item)
+    }
+
     /// Adds a piece of data, hence a new row, to the table
     pub fn insert(&mut self, data: T) {
         let id = Uuid::new_v4();
@@ -111,7 +117,7 @@ impl<T: std::fmt::Debug + Clone, M: Clone> Table<T, M> {
     }
 
     /// Adds a double click handler to the table
-    //  
+    //
     //  FIXME: This current design for the double click listener might be
     //  convenient but it's stupid; We want to able to get a Message back into
     //  the update loop which is why this will have to be redesigned at some

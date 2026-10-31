@@ -18,10 +18,8 @@ use backend::{
     api::endpoint_api::{EndpointManager, GetPlaylistsParams},
     data_view::PlaylistView,
 };
-use macros::Receiver;
 
 use crate::ui::{
-    Receiver,
     app::AppState,
     components::{
         icons::{self, Icon},
@@ -30,8 +28,7 @@ use crate::ui::{
     router::Route,
 };
 
-#[derive(Default, Receiver)]
-#[message(SidebarMsg)]
+#[derive(Default)]
 pub struct Sidebar {
     playlists: Vec<SidebarPlaylist>,
 }

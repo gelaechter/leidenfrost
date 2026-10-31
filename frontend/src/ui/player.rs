@@ -17,10 +17,11 @@ use backend::{
 };
 
 use crate::ui::{
-    Receiver, app::AppState, playerbar::{PlayerBar, PlayerBarMsg}, queue::{Queue, QueueMsg},
+    Receiver,
+    components::track_table::{self, TrackRow, TrackTable},
+    playerbar::{PlayerBar, PlayerBarMsg},
 };
 
-use macros::Receiver;
 
 #[derive(Clone, Debug)]
 pub enum Message {
@@ -72,16 +73,75 @@ static PLAYER_EVENT_CHANNEL: LazyLock<(
 
 /// The player is a [`Receiver`] for [`PlayerMsg`] so that we can arbitrarily
 /// add items ot the queue
-#[derive(Debug, Receiver)]
-#[message(PlayerMsg)]
+#[derive(Debug)]
 pub struct GenericPlayer {
+    /// The currently played track
+    current_index: Option<usize>,
+    /// It may seem counterituitive to use a table as the storage but this makes
+    /// displaying the data a lot easier down the line.
+    pub(crate) queue: TrackTable,
+    /// Is shuffle activated
+    shuffle: bool,
+    /// The repeat mode of the player
+    repeat_mode: RepeatMode,
+    /// The internal volume of the player in percent (not the system)
+    volume: u32,
+    /// The state of the player
+    paused: bool,
+    /// The playback progress in seconds
+    progress: f64,
     player_impl: Option<PlayerImpl>,
+}
+
+/// Accessors
+impl GenericPlayer {
+    pub fn current_track(&self) -> Option<usize> {
+        self.current_index
+    }
+
+    pub fn queue(&self) -> &TrackTable {
+        &self.queue
+    }
+
+    pub fn queue_mut(&mut self) -> &mut TrackTable {
+        &mut self.queue
+    }
+
+    pub fn is_shuffle(&self) -> bool {
+        self.shuffle
+    }
+
+    pub fn repeat_mode(&self) -> RepeatMode {
+        self.repeat_mode
+    }
+
+    pub fn volume(&self) -> u32 {
+        self.volume
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
+
+    pub fn progress(&self) -> f64 {
+        self.progress
+    }
 }
 
 impl Default for GenericPlayer {
     fn default() -> Self {
         Self {
+            current_index: None,
+            queue: TrackTable::new()
+                .add_column(track_table::index_column())
+                .add_column(track_table::combined_title_column())
+                .add_column(track_table::duration_column()),
             player_impl: Some(PlayerImpl::mpv_player()),
+            shuffle: false,
+            repeat_mode: RepeatMode::None,
+            volume: 100,
+            paused: false,
+            progress: 0.0,
         }
     }
 }
@@ -124,7 +184,7 @@ impl PlayerImpl {
 }
 
 impl GenericPlayer {
-    pub fn update(&mut self, message: impl Into<PlayerMsg>, _app_state: &mut AppState) {
+    pub fn update(&mut self, message: impl Into<PlayerMsg>) {
         let Some(player_impl) = self.player_impl.as_ref() else {
             return;
         };
@@ -139,55 +199,109 @@ impl GenericPlayer {
             }
             Message::Play(track_view) => {
                 player.play(&track_view).unwrap();
-                Queue::send(QueueMsg::Play(track_view));
+
+                self.queue.clear();
+                self.current_index = Some(0);
+                self.queue.insert(track_view.into());
+
                 Ok(())
             }
-            Message::SetPaused(paused) => player.pause(paused),
-            Message::Seek(position) => player.seek(position),
+            Message::SetPaused(paused) => {
+                player.pause(paused).unwrap();
+                self.paused = paused;
+                Ok(())
+            }
+            Message::Seek(position) => {
+                player.seek(position).unwrap();
+                self.progress = position;
+                Ok(())
+            }
             Message::Stop => player.stop(),
             Message::PlayAll(track_views) => {
                 player.play_all(&track_views).unwrap();
-                Queue::send(QueueMsg::PlayAll(track_views));
+
+                self.queue.clear();
+                let rows = track_views.into_iter().map(TrackRow::from);
+                self.queue.extend(rows);
+                self.current_index = Some(0);
+
                 Ok(())
             }
             Message::PlayIndex(index) => {
                 player.play_index(index).unwrap();
-                Queue::send(QueueMsg::PlayIndex(index));
+
+                self.current_index = Some(index);
+
                 Ok(())
             }
             Message::Append(track_view) => {
                 player.append(&track_view).unwrap();
-                Queue::send(QueueMsg::Append(track_view));
+                self.queue.insert(track_view.into());
                 Ok(())
             }
             Message::AppendAll(track_views) => {
                 player.append_all(&track_views).unwrap();
-                Queue::send(QueueMsg::AppendAll(track_views));
+
+                let rows = track_views.into_iter().map(TrackRow::from);
+                self.queue.extend(rows);
+
                 Ok(())
             }
             Message::QueueRemove(index) => {
                 player.queue_remove(index).unwrap();
-                Queue::send(QueueMsg::QueueRemove(index));
+
+                self.queue.remove_index(index);
+
                 Ok(())
             }
             Message::QueueMove { target, position } => {
                 player.queue_move(target, position).unwrap();
-                Queue::send(QueueMsg::QueueMove { target, position });
+
+                if let Some(data) = self.queue.remove_index(target) {
+                    self.queue.insert_at(position, data);
+                }
+
                 Ok(())
             }
-            Message::SetShuffle(b) => player.set_shuffle(b),
-            Message::SetRepeatMode(repeat_mode) => player.set_repeat_mode(repeat_mode),
+            Message::SetShuffle(b) => {
+                player.set_shuffle(b).unwrap();
+
+                self.shuffle = b;
+
+                Ok(())
+            }
+            Message::SetRepeatMode(repeat_mode) => {
+                player.set_repeat_mode(repeat_mode).unwrap();
+
+                self.repeat_mode = repeat_mode;
+
+                Ok(())
+            }
             Message::Next => {
                 player.next().unwrap();
-                Queue::send(QueueMsg::Next);
+
+                if let Some(current_index) = &mut self.current_index {
+                    *current_index += 1;
+                }
+
                 Ok(())
             }
             Message::Previous => {
                 player.previous().unwrap();
-                Queue::send(QueueMsg::Previous);
+
+                if let Some(current_index) = &mut self.current_index {
+                    *current_index -= 1;
+                }
+
                 Ok(())
             }
-            Message::Volume(percentage) => player.volume(percentage),
+            Message::Volume(percentage) => {
+                player.volume(percentage).unwrap();
+
+                self.volume = percentage;
+
+                Ok(())
+            }
         };
     }
 

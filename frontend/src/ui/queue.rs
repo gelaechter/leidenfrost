@@ -1,117 +1,64 @@
-use crate::ui::{Receiver, app::AppState, components::track_table::TrackRow};
-use backend::data_view::TrackView;
+use crate::ui::app::AppState;
 use iced::{Element, Task};
-use macros::Receiver;
 
-use crate::ui::components::track_table::{
-    TrackTable, TrackTableMsg, combined_title_column, duration_column, index_column,
-};
+use crate::ui::components::track_table::TrackTableMsg;
 
-#[derive(Receiver)]
-#[message(QueueMsg)]
-pub struct Queue {
-    current_index: usize,
-    /// The table displaying the current queue
-    table: TrackTable,
-}
-
-impl Default for Queue {
-    fn default() -> Self {
-        let table = TrackTable::new()
-            .add_column(index_column())
-            .add_column(combined_title_column())
-            .add_column(duration_column());
-
-        Self {
-            table,
-            current_index: 0,
-        }
-    }
-}
+/// Queue has no state because all information about the queue is held by the
+/// global player
+#[derive(Default)]
+pub struct Queue {}
 
 #[derive(Debug, Clone)]
 pub enum QueueMsg {
-    /// Clears the queue and plays just that track
-    Play(TrackView),
-    PlayAll(Vec<TrackView>),
-    /// Changes playback to a certain index in the queue
-    PlayIndex(usize),
-    /// Adds some tracks to the queue
-    Append(TrackView),
-    AppendAll(Vec<TrackView>),
-    /// Remove a track from the queue (zero indexed)
-    QueueRemove(usize),
-    /// Move a track in the queue
-    ///
-    /// Moves a target track in the queue before the position of another one
-    QueueMove {
-        target: usize,
-        position: usize,
-    },
     /// Drives the used track Table
     TableDriver(TrackTableMsg),
-    Next,
-    Previous,
 }
 
 impl Queue {
     pub fn view<'a>(&'a self, app_state: &'a AppState) -> Element<'a, QueueMsg> {
-        self.table.view(app_state).map(QueueMsg::TableDriver)
+        app_state
+            .player
+            .queue()
+            .view(app_state)
+            .map(QueueMsg::TableDriver)
     }
 
     pub fn update(&mut self, message: QueueMsg, app_state: &mut AppState) -> Task<QueueMsg> {
-        // The table driver needs to return a task
-        if let QueueMsg::TableDriver(message) = message {
-            return self.table.update(message, app_state).map(QueueMsg::TableDriver);
-        }
-
-        // Everything else is just side effects
         match message {
-            QueueMsg::Play(track_view) => {
-                self.table.clear();
-                self.current_index = 0;
-                let _ = self.update(QueueMsg::Append(track_view), app_state);
-                Task::none()
-            }
-            QueueMsg::PlayAll(track_views) => {
-                self.table.clear();
-                self.current_index = 0;
-                let _ = self.update(QueueMsg::AppendAll(track_views), app_state);
-                Task::none()
-            }
-            QueueMsg::Append(track_view) => {
-                self.table.insert(track_view.into());
-                Task::none()
-            }
-            QueueMsg::AppendAll(track_views) => {
-                let rows: Vec<TrackRow> = track_views.into_iter().map(TrackRow::from).collect();
-                self.table.extend(rows);
-                Task::none()
-            }
-            QueueMsg::QueueRemove(index) => {
-                self.table.remove_index(index);
-                Task::none()
-            }
-            QueueMsg::QueueMove { target, position } => {
-                if let Some(data) = self.table.remove_index(target) {
-                    self.table.insert_at(position, data);
-                }
-                Task::none()
-            }
-            QueueMsg::PlayIndex(index) => {
-                self.current_index = index;
-                Task::none()
-            }
-            QueueMsg::Next => {
-                self.current_index += 1;
-                Task::none()
-            }
-            QueueMsg::Previous => {
-                self.current_index -= 1;
-                Task::none()
-            }
-            QueueMsg::TableDriver(_) => {
-                panic!("Impossible branch (see above)")
+            QueueMsg::TableDriver(message) => {
+                // FIXME: as anyone with functioning eyes can see, we copy the entire queue just
+                // to mutate it and overwrite it, which is very stupid
+                //
+                // I did this because if I try mutating the queue in-place then i have to borrow
+                // `&mut app_state` twice, once for mutating the queue and once to pass into the
+                // [`Table::update`]
+                // ```
+                // error[E0499]: cannot borrow `app_state.player.queue` as mutable more than once at a time
+                //   --> frontend/src/ui/queue.rs:42:17
+                //    |
+                // 42 | /                 app_state
+                // 43 | |                     .player
+                // 44 | |                     .queue
+                // 45 | |                     .update(message, app_state)
+                //    | |______________________------__________---------^ second mutable borrow occurs here
+                //    |                        |               |
+                //    |                        |               first mutable borrow occurs here
+                //    |                        first borrow later used by call
+                // ```
+                // This will have to be fixed at some point, either by:
+                //  1. Creating a RefTable which can display the state of the player queue
+                //     without owning the data
+                //  2. Moving the queue table out of the player (this again requiresadditional
+                //     wiring/messaging)
+                //  3. doing some fuckery with RefCell or the like
+                //  4. ???
+                //
+                // I have not yet found a satisfactory solution which is why this piece of code
+                // will stay here until I do
+                let mut queue = app_state.player.queue.clone();
+                let task = queue.update(message, app_state).map(QueueMsg::TableDriver);
+                app_state.player.queue = queue;
+                task
             }
         }
     }

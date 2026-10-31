@@ -25,7 +25,7 @@ use crate::ui::{
 
 #[derive(Debug, Default)]
 pub struct AppState {
-    player: GenericPlayer,
+    pub player: GenericPlayer,
     pub(crate) route: Route,
 }
 
@@ -168,7 +168,7 @@ impl App {
                 .on_resize(10, Message::PaneResized)
                 .into(),
                 // The player bar
-                self.player_bar.view().map(Message::PlayerBar),
+                self.player_bar.view(&self.state).map(Message::PlayerBar),
             ])
             .into(),
             // The command palette which floats above the base plane
@@ -217,7 +217,7 @@ impl App {
                 }
             }
             Message::Player(message) => {
-                self.player.update(*message, &mut self.state);
+                self.player.update(*message);
                 Task::none()
             }
             Message::Settings(cmd) => self

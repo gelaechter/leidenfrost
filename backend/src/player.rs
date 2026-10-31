@@ -2,7 +2,7 @@ pub mod mpv_player;
 
 use crate::data_view::TrackView;
 
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug, Default, Copy)]
 pub enum RepeatMode {
     #[default]
     /// Do not repeat at all

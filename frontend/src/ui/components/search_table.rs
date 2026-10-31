@@ -3,7 +3,6 @@
 use std::time::Duration;
 
 use crate::ui::{
-    Receiver,
     components::{
         album_table::{self, AlbumCellMsg, AlbumRow},
         icons,
@@ -12,7 +11,7 @@ use crate::ui::{
         table::{Column, Table, TableMsg},
         track_table::{self, TrackCellMsg, TrackRow},
     },
-    player::{GenericPlayer, PlayerMsg},
+    player::PlayerMsg,
     router::{
         Route,
         artists::{self, ArtistCellMsg, ArtistRow},
@@ -84,7 +83,7 @@ impl Default for SearchTable {
                 log::debug!("Double clicked search table row");
                 match row {
                     SearchRow::Track(track_row) => {
-                        GenericPlayer::send(PlayerMsg::Play(track_row.view));
+                        state.player.update(PlayerMsg::Play(track_row.view));
                     }
                     // Navigate to the artist
                     SearchRow::Artist(artist_row) => {
